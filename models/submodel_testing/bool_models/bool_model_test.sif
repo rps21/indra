@@ -1,0 +1,12 @@
+HRAS = False
+EGFR = False
+MAPK1 = False
+RAF1 = False
+SOS1 = False
+GRB2 = False
+MAP2K1 = False
+
+HRAS* = SOS1
+MAPK1* = MAP2K1
+GRB2* = EGFR
+MAP2K1* = RAF1

@@ -3,6 +3,10 @@ from builtins import dict, str
 import pickle
 from indra.databases import relevance_client
 from indra.assemblers import PysbAssembler
+from indra.preassembler import Preassembler
+from indra.preassembler.hierarchy_manager import hierarchies
+import pysb
+from pysb.export import export
 
 def get_subnetwork(statements, nodes, relevance_network=None,
                    relevance_node_lim=10):
@@ -38,11 +42,16 @@ def get_subnetwork(statements, nodes, relevance_network=None,
         all_nodes = nodes + relevant_nodes
     else:
         all_nodes = nodes
-    filtered_statements = _filter_statements(statements, all_nodes)
+
+    #filtered_statements = _filter_statements(statements, all_nodes)
+    #direct_statements = filter_direct(filtered_statements)
+
+    stmts3 = _filter_statements(statements, all_nodes)
+    stmts4 = filter_direct(stmts3)
     pa = PysbAssembler()
-    pa.add_statements(filtered_statements)
+    pa.add_statements(stmts4)
     model = pa.make_model()
-    return model
+    return model, stmts3, stmts4
 
 def _filter_statements(statements, agents):
     """Return INDRA Statements which have Agents in the given list.
@@ -63,7 +72,7 @@ def _filter_statements(statements, agents):
         The list of filtered INDRA Statements.
     """
     filtered_statements = []
-    for s in stmts:
+    for s in statements:
         if all([a is not None for a in s.agent_list()]) and \
             all([a.name in agents for a in s.agent_list()]):
             filtered_statements.append(s)
@@ -91,16 +100,57 @@ def _find_relevant_nodes(query_nodes, relevance_network, relevance_node_lim):
     nodes = [n[0] for n in all_nodes[:relevance_node_lim]]
     return nodes
 
+def get_is_direct(stmt):
+    '''Returns true if there is evidence that the statement is a direct
+    interaction. If any of the evidences associated with the statement
+    indicates a direct interatcion then we assume the interaction
+    is direct. If there is no evidence for the interaction being indirect
+    then we default to direct.'''
+    any_indirect = False
+    for ev in stmt.evidence:
+        if ev.epistemics.get('direct') is True:
+            return True
+        elif ev.epistemics.get('direct') is False:
+            # This guarantees that we have seen at least
+            # some evidence that the statement is indirect
+            any_indirect = True
+    if any_indirect:
+        return False
+    return True
+
+def filter_direct(stmts):
+    direct_stmts = []
+    for stmt in stmts:
+        if get_is_direct(stmt):
+            direct_stmts.append(stmt)
+    return direct_stmts
+
 if __name__ == '__main__':
     genes = ['EGF', 'EGFR', 'ERBB2', 'GRB2', 'SOS1', 'HRAS', 'RAF1',
             'MAP2K1', 'MAPK1']
 
-    with open('models/rasmachine/rem/model.pkl', 'rb') as f:
+    with open('reading/model.pkl', 'rb') as f:
         model = pickle.load(f)
-    stmts = []
+    stmts1 = []
     for k, v in model.items():
-        stmts += v
+        stmts1 += v
+   # stmts2 = filter_direct(stmts1)
+	
 
     rasmachine_network = '50e3dff7-133e-11e6-a039-06603eb7f303'
-    model = get_subnetwork(stmts, genes, rasmachine_network)
+    #model_nofilter = get_subnetwork(stmts, genes)
+    model, my_stmts3, my_stmts4 = get_subnetwork(stmts1, genes)
 
+
+
+#bngl_model = pysb.export.export(model_nofilter,'bngl')
+#bngl_file = open('rbm/ras_nofilter.bngl','w')
+#bngl_file.write(bngl_model)
+#bngl_file.close()
+
+#bngl_model_filter = pysb.export.export(model,'bngl')
+#bngl_file_filter = open('rbm/ras_newsmall.bngl','w')
+#bngl_file_filter.write(bngl_model_filter)
+#bngl_file_filter.close()
+
+ 
