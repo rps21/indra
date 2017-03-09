@@ -8,12 +8,14 @@ from indra.databases import relevance_client, hgnc_client
 from indra.assemblers import PysbAssembler
 from indra.preassembler import Preassembler
 from indra.preassembler.hierarchy_manager import hierarchies
+from indra.tools import assemble_corpus as ac
 from indra.statements import Phosphorylation, Agent, Evidence
 import pysb
 from pysb.export import export
 import indra
 
 
+#model, my_direct, my_indirect, my_stmts = get_subnetwork(stmts1, genes)
 def get_subnetwork(statements, nodes, relevance_network=None,
                    relevance_node_lim=10):
 
@@ -28,35 +30,15 @@ def get_subnetwork(statements, nodes, relevance_network=None,
     my_direct, my_indirect = filter_direct(filtered_statements)
 
 	#adding preassembler to resolve hierarchies
+    my_direct = ac.run_preassembly(my_direct)
+    my_direct = ac.map_sequence(my_direct)
     pra = Preassembler(hierarchies, my_direct)
     stmts_unique = pra.combine_related()
 
     pa = PysbAssembler('two_step')
     pa.add_statements(stmts_unique)
     model = pa.make_model()
-    return model, my_direct, my_indirect, filtered_statements
-
-
-#Just for testing
-#def filter_egf_egfr(statements):
-#    
-#    filtered_first = []
-#    for st in statements:
-#        if 'EGF(' in str(st):
-#            filtered_first.append(st)
-#        elif 'egf(' in str(st):
-#            filtered_first.append(st)
-
-#    egf_egfr_stmts = []
-#    for st in filtered_first:
-#        if 'EGFR(' in str(st):
-#            egf_egfr_stmts.append(st)
-#        elif 'egfr(' in str(st):
-#            egf_egfr_stmts.append(st)
-
-#    return(egf_egfr_stmts)
-
-
+    return model, my_direct, my_indirect, stmts_unique
 
 def _filter_statements(statements, agents):
     """Return INDRA Statements which have Agents in the given list.
@@ -181,28 +163,28 @@ def filter_enzkinase(stmts):
     return stmts_enzkinase
 
 if __name__ == '__main__':
-    genes = ['EGF', 'EGFR', 'ERBB2', 'GRB2', 'SOS1', 'HRAS', 'RAF1',
-            'MAP2K1', 'MAPK1']
+#    genes = ['EGF', 'EGFR', 'ERBB2', 'GRB2', 'SOS1', 'HRAS', 'RAF1',
+#            'MAP2K1', 'MAPK1']
+    genes = ['MAP2K1', 'MAPK1']
 
-#    with open('reading/model.pkl', 'rb') as f:
     with open('reading/model-2016-11-30-10-18-57.pkl', 'rb') as f:
+#    with open('phase3_preassembled.pkl', 'rb') as f:
         model = pickle.load(f)
     stmts1 = []
     for k, v in model.items():
         stmts1 += v
+
+    #preassembly
+    #stmts1 = ac.run_preassembly(stmts1)
+    #stmts1 = ac.map_sequence(stmts1)
 
     rasmachine_network = '50e3dff7-133e-11e6-a039-06603eb7f303'
     #model_nofilter = get_subnetwork(stmts, genes)
     model, my_direct, my_indirect, my_stmts = get_subnetwork(stmts1, genes)
 
 
-#bngl_model = pysb.export.export(model_nofilter,'bngl')
-#bngl_file = open('rbm/ras_nofilter.bngl','w')
-#bngl_file.write(bngl_model)
-#bngl_file.close()
-
 bngl_model_filter = pysb.export.export(model,'bngl')
-bngl_file_filter = open('rbm/new_filter_complex_are_direct_phos_fix.bngl','w')
+bngl_file_filter = open('rbm/mapk_sitemap.bngl','w')
 bngl_file_filter.write(bngl_model_filter)
 bngl_file_filter.close()
 
