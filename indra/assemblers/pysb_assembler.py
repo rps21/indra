@@ -290,6 +290,7 @@ def get_mod_site_name(mod_type, residue, position):
 
 # PySB model elements ##################################################
 
+
 def get_agent_rule_str(agent):
     """Construct a string from an Agent as part of a PySB rule name."""
     rule_str_list = [_n(agent.name)]
@@ -741,6 +742,7 @@ class PysbAssembler(object):
             The assembled PySB model object.
         """
         ppa = PysbPreassembler(self.statements)
+        ppa.add_uuid()
         ppa.replace_activities()
         if reverse_effects:
             ppa.add_reverse_effects()
@@ -1037,6 +1039,11 @@ def complex_assemble_one_step(stmt, model, agent_set):
                             agent1_pattern(**{agent1_bs: 1}) % \
                             agent2_pattern(**{agent2_bs: 1}),
                             kf_bind)
+        try:
+            stmt.uuid
+        except AttributeError:
+            stmt.uuid = 'Missing'
+
         anns = [Annotation(rule_name, agent1_pattern.monomer.name,
                            'rule_has_subject'),
                 Annotation(rule_name, agent1_pattern.monomer.name,
@@ -1164,6 +1171,10 @@ def complex_assemble_multi_way(stmt, model, agent_set):
     # Finally, create the rule and add it to the model
     rule_fwd = Rule(rule_name + '_fwd', lhs >> rhs, kf_bind)
     rule_rev = Rule(rule_name + '_rev', rhs >> lhs, kr_bind)
+    try:
+        stmt.uuid
+    except AttributeError:
+        stmt.uuid = 'Missing'
     anns = [Annotation(rule_fwd.name, stmt.uuid, 'from_indra_statement')]
     add_rule_to_model(model, rule_fwd, anns)
     anns = [Annotation(rule_rev.name, stmt.uuid, 'from_indra_statement')]
@@ -1340,6 +1351,13 @@ def modification_assemble_two_step(stmt, model, agent_set):
         enz_bound() % \
         sub_pattern(**{mod_site: unmod_site_state, enz_bs: 1}),
         kf_bind)
+
+    try:
+        stmt.uuid
+    except AttributeError:
+        stmt.uuid = 'Missing'
+
+
     anns = [Annotation(rule_name, stmt.uuid, 'from_indra_statement')]
     add_rule_to_model(model, r, anns)
 
@@ -1355,6 +1373,12 @@ def modification_assemble_two_step(stmt, model, agent_set):
                        'rule_has_subject'),
             Annotation(rule_name, sub_pattern.monomer.name,
                        'rule_has_object')]
+    try:
+        stmt.uuid
+    except AttributeError:
+        stmt.uuid = 'Missing'
+        
+
     anns += [Annotation(rule_name, stmt.uuid, 'from_indra_statement')]
     add_rule_to_model(model, r, anns)
 
@@ -2436,6 +2460,13 @@ class PysbPreassembler(object):
                     new_agent.activity = None
                     agent_to_add = new_agent
                 base_agent.add_activity_form(agent_to_add, stmt.is_active)
+
+    def add_uuid(self):
+        for stmt in self.statements:
+            try:
+                stmt.uuid
+            except AttributeError:
+                stmt.uuid = 'Missing'
 
     def replace_activities(self):
         # TODO: handle activity hierarchies
