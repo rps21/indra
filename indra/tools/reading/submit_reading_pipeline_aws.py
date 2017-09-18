@@ -114,8 +114,8 @@ def submit_run_reach(basename, pmid_list_filename, start_ix=None, end_ix=None,
                        jobQueue='run_reach_queue',
                        jobDefinition='run_reach_jobdef',
                        containerOverrides={'environment': environment_vars,
-                                           'command': command_list},
-                       retryStrategy={'attempts': num_tries})
+                                           'command': command_list})#,
+                       #retryStrategy={'attempts': num_tries})
         job_list.append({'jobId': job_info['jobId']})
     return job_list
 

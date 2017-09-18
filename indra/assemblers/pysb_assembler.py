@@ -15,6 +15,7 @@ from indra import statements as ist
 from indra.databases import context_client, get_identifiers_url
 from indra.preassembler.hierarchy_manager import entity_hierarchy as enth
 from indra.tools.expand_families import _agent_from_uri
+#from indra.tools.expand_families import Expander
 
 # Python 2
 try:
@@ -266,6 +267,7 @@ def get_binding_site_name(agent):
         if parents:
             # Choose the first parent if there are more than one
             parent_uri = sorted(list(parents))[0]
+#            parent_agent = _agent_from_uri(parent_uri)
             parent_agent = _agent_from_uri(parent_uri)
             binding_site = _n(parent_agent.name).lower()
             return binding_site
