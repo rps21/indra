@@ -1,7 +1,5 @@
 from __future__ import absolute_import, print_function, unicode_literals
 from builtins import dict, str
-import xml.etree.ElementTree as ET
-from indra.assemblers import PysbAssembler
 from indra.assemblers import pysb_assembler as pa
 from indra.assemblers.pysb_assembler import PysbPreassembler
 from indra.statements import *
@@ -591,16 +589,6 @@ def test_annotation():
     pa.make_model()
     assert(len(pa.model.annotations) == 5)
 
-def test_annotation_regamount():
-    st1 = IncreaseAmount(Agent('BRAF', db_refs = {'UP': 'P15056'}),
-                         Agent('MAP2K2', db_refs = {'HGNC': '6842'}))
-    st2 = DecreaseAmount(Agent('BRAF', db_refs = {'UP': 'P15056'}),
-                         Agent('MAP2K2', db_refs = {'HGNC': '6842'}))
-    pa = PysbAssembler()
-    pa.add_statements([st1, st2])
-    pa.make_model()
-    assert(len(pa.model.annotations) == 8)
-
 def test_print_model():
     st = Phosphorylation(Agent('MAP2K1'), Agent('MAPK3'))
     pa = PysbAssembler()
@@ -626,31 +614,6 @@ def test_export_model():
     assert(exp_str)
     exp_str = pa.export_model('sbml', file_name='/dev/null')
     assert(exp_str)
-
-def test_assemble_export_sbgn():
-    # Add various statements to test their assembly
-    st = Phosphorylation(Agent('BRAF'), Agent('MAP2K1'))
-    mc = ModCondition('phosphorylation', None, None, True)
-    st2 = Activation(Agent('MAP2K1', mods=[mc]), Agent('MAPK1'))
-    st3 = Complex([Agent('MAPK1'), Agent('DUSP6')])
-    st4 = DecreaseAmount(None, Agent('DUSP6'))
-    pa = PysbAssembler()
-    pa.add_statements([st, st2, st3, st4])
-    pa.make_model()
-    # Export to SBGN
-    model = pa.export_model('sbgn')
-    assert model is not None
-    # Test that the right elements are there in the result
-    et = ET.fromstring(model)
-    sbgn_ns = {'s': 'http://sbgn.org/libsbgn/pd/0.1'}
-    glyphs = et.findall('s:map/s:glyph', namespaces=sbgn_ns)
-    glyph_classes = [g.attrib.get('class') for g in glyphs]
-    assert glyph_classes.count('macromolecule') == 6
-    assert glyph_classes.count('complex') == 2
-    assert glyph_classes.count('process') == 10
-    # Both the monomer DUSP and its 2 complex forms degrade
-    assert glyph_classes.count('source and sink') == 3
-    return pa
 
 def test_name_standardize():
     n = pa._n('.*/- ^&#@$')
