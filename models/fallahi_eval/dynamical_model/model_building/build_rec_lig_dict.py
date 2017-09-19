@@ -1,6 +1,8 @@
 import pandas as pd
 import pickle
 
+#http://dip.doe-mbi.ucla.edu/dip/dlrp/dlrp.txt
+
 with open('dlrp_symbolonly.csv','r') as f:
     wholelist=f.readlines()
 

@@ -1,14 +1,14 @@
 #def find_rec_lig_pair(stmts_in):
 import pickle
 
-with open('/home/bobby/Dropbox/Sorger_Lab/BigMech/reporting_and_eval/phase3_eval_pt2/model_building/lig_rec_dict.pkl','rb') as f:
+with open('/home/bobby/Dropbox/Sorger_Lab/BigMech/reporting_and_eval/phase3_eval_pt2/dynamical_model/model_building/lig_rec_dict.pkl','rb') as f:
     receptor_dict = pickle.load(f)
 
 #send list of stmts, loop through stmts inside function, check for complex stmts, loop through all agents, check in if in ligand list
 #stmts = ac.load_statements('my_reading/stmts_preassembled_fixed_be_filtering.pkl')
-stmts = ac.load_statements('/home/bobby/Dropbox/Sorger_Lab/BigMech/reporting_and_eval/phase3_eval_pt2/model_building/secondpass_model_stmts.pkl')
+stmts = ac.load_statements('/home/bobby/Dropbox/Sorger_Lab/BigMech/reporting_and_eval/phase3_eval_pt2/dynamical_model/model_building/secondpass_model_stmts.pkl')
 
-stmts = ac.load_statements('')
+#stmts = ac.load_statements('')
 
 
 
@@ -37,7 +37,7 @@ for st in stmts_in:
                 if str(ag.name).strip('()') in rec:
 #                    print(str(ag))
                     lig_list_pre.append(lig+'()')
-                    rec_list.append(str(ag))
+                    rec_list.append(ag)
 
 lig_list = []
 for lig in lig_list_pre:
@@ -55,14 +55,13 @@ for rec in rec_list:
     rec_stmts = [] #this works since there's one rec for now, need to use different object or list of lists when dealing with multiple recs, but I'm on a deadline
     for st in stmts_in:
         for ag in st.agent_list():    #rec is string with no () now
-            if rec in str(ag):
+            if rec.entity_matches(ag):
                 rec_stmts.append(st)
 
 rec_stmts = list(set(rec_stmts))
-#this is limited for now, didn't included egf in first pass and grb2 is missing for some reason and i had manually added.
-#Out[60]: [Complex(EGFR(), EGFR()), Phosphorylation(EGFR(), AKT1())]
 
-#rec_stmts = ac.load_statements('egfr_context_testing.pkl')
+
+
 #rec_list has all rec (in this case one)
 #rec_stmts has all stmts for each rec (in this case it's a single list, may become list of list or a different data structure
 
@@ -72,7 +71,8 @@ rec_nolig_st = []
 for rec in rec_list: #just egfr 
     for lig in lig_list:
         for st in rec_stmts:
-            if rec in str(st.agent_list()):
+#            if rec in str(st.agent_list()):
+            if rec in st.agent_list():
                 if lig in str(st.agent_list()):
                     rec_lig_st.append(st)
 
