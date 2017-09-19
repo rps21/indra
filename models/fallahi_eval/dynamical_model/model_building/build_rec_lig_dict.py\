@@ -1,0 +1,7 @@
+#pandas isn't super helpful, loses blank lines, may want to output as dict anyway
+
+#maybe, read as list of lines, with empty lines
+#first val is dict key
+#everything until empty line become tuple val
+#at new line, skip, new key
+#repeat

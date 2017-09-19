@@ -1,0 +1,62 @@
+Manually add egf (should add this in filtering, may pick it up automatically) - at end 
+Manually connect egfr to grb2 - done
+Manually combine SOS and SOS1, preserving SOS connection to KRAS - done
+
+EGFR-Akt direct connection?
+[Evidence(reach, 25000176, {'found_by': 'Phosphorylation_syntax_1a_noun'}, Phosphorylation of downstream signaling molecules phosphoinositide 3-kinase (PI3K) and protein kinase B (PKB or Akt) by activated EGFR promotes cell proliferation XREF_BIBR, XREF_BIBR.),
+ Evidence(reach, 12532415, {'found_by': 'Phosphorylation_syntax_3_noun'}, In contrast, inhibition of phosphatidylinositol-3-kinase (PI3K) blocked the constitutive phosphorylation of Erk and AKT-1 but not the EGFR.)]
+
+Clearly skipping PI3K but maybe that's okay
+
+
+count how many observables remain
+specifically, are there proteins of the observable list that are missing phosphorylation sites observed?
+
+Already:
+Iteration   3:  3900 species   6971 rxns  8.78e+00 CPU s
+Then crash
+
+
+Ways to reduce complexity:
+check mod/muts but they look minimal at first glance
+    -none to remove
+check dimers
+    -EGFR,GRB2, mtor on mTORC1 site?
+    -remove grb2 and mtor for now, leave egfr since grb2 binding relies on egfr dimer
+    -can revist egfr if needed, make grb2 binding dependent on egf binding or phos, have to add one or both
+    -grb2 and mtor done, didn't break any other rules.
+    -egfr done. Made egfr-grb2 binding context independent. Can add back complexity later
+    -still: Iteration   3:  2078 species   4279 rxns  4.12e+00 CPU s
+
+
+binding context - how many instances of random binding, when upstream binding is needed first. can create lots of unlikely  
+
+Focus on ras part of the pathway for now
+
+POTENTIAL MAJOR FLAW
+    will akt portion of the pathway currently be affected by any of the drugs?
+    MEK inhibitor probably most challenging, ignore for now
+    dirty drug may be easiest to get a perturbation, but most difficult to model
+    RAF1 may give some entry point. Not sure what that interaction with AKT is abou
+    Otherwise need some real cross talk between pathways
+
+Additional context concerns:
+    -mtor and associated complexes in general is off, mtor itself missing key phos. 
+    -why dose mtor phosphorylate S6, instead of S6K?
+
+    -akt/mtor path to shoot for
+    akt activates mtorc1 (doesn't bind directly but whatever)
+    mtorc1 activates s6k1 (is this direct phosphorylation)
+    s6k phosphorylates s6
+    s6 inhibits mtorc2 (direct phosphorylation?)
+    mtorc2 phosphorylates and activates akt3
+
+    original activation of akt should probably be rec->pi3k->pip3->mtorc2->akt (and this hits S473)
+    Currently have rec -> akt
+    can settle for rec->mtorc2->akt (misses pten feedback :( )
+
+Ways to add back in observales:
+Many were in the first model I made, that had faulty BE filtering
+Can potentially add back in small sets of rules from that model
+Best of both worlds, accuracy from strict filtering, some expansion from weak filtering, without having to do wide scale accuracy checking of evertying in the model
+only have to check small number of rules re-introduced
