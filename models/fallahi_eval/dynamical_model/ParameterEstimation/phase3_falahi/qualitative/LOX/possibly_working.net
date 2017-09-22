@@ -1,0 +1,275 @@
+# Created by BioNetGen 2.2.6-stable
+begin parameters
+    1 drug_0                   1  # Constant
+    2 GRB2_0                   5.000000e+04  # Constant
+    3 MAPK1_0                  5.000000e+04  # Constant
+    4 KRAS_0                   5.000000e+04  # Constant
+    5 SOS1_0                   5.000000e+04  # Constant
+    6 MAP2K1_0                 5.000000e+04*1.5  # Constant
+    7 EGFR_0                   1.000000e+04  # Constant
+    8 MAPK3_0                  5.000000e+04  # Constant
+    9 BRAF_0                   1e5*1.5  # Constant
+   10 EGF_0                    10000  # Constant
+   11 phos_0                   1e5  # Constant
+   12 kf_kb_act_1              1.000000e-06  # Constant
+   13 kf_e_autophos_1          1.000000e-02  # Constant
+   14 kf_eg_bind_1             1.000000e-06  # Constant
+   15 kr_eg_bind_1             1.000000e-01  # Constant
+   16 kf_ee_bind_1             1.000000e-06  # Constant
+   17 kr_ee_bind_1             1.000000e-01  # Constant
+   18 kf_gs_bind_1             1.000000e-06  # Constant
+   19 kr_gs_bind_1             1.000000e-01  # Constant
+   20 kf_sk_gef_1              1.000000e-06  # Constant
+   21 kf_bm_bind_1             1.000000e-06  # Constant
+   22 kr_bm_bind_1             1.000000e-01  # Constant
+   23 kc_bm_phosphorylation_1  1.000000e+02  # Constant
+   24 kf_bm_bind_2             1.000000e-06  # Constant
+   25 kr_bm_bind_2             1.000000e-01  # Constant
+   26 kc_bm_phosphorylation_2  1.000000e+02  # Constant
+   27 kf_bm_bind_3             1.000000e-06  # Constant
+   28 kr_bm_bind_3             1.000000e-01  # Constant
+   29 kc_bm_phosphorylation_3  1.000000e+02  # Constant
+   30 kf_mm_bind_1             1.000000e-06  # Constant
+   31 kr_mm_bind_1             1.000000e-01  # Constant
+   32 kc_mm_phosphorylation_1  1.000000e+02  # Constant
+   33 kf_mm_bind_2             1.000000e-06  # Constant
+   34 kr_mm_bind_2             1.000000e-01  # Constant
+   35 kc_mm_phosphorylation_2  1  # Constant
+   36 kf_mb_bind_1             1.000000e-06  # Constant
+   37 kr_mb_bind_1             1.000000e-01  # Constant
+   38 kc_mb_phosphorylation_1  1.000000e+02  # Constant
+   39 kf_mm_bind_3             1.000000e-06  # Constant
+   40 kr_mm_bind_3             1.000000e-01  # Constant
+   41 kc_mm_phosphorylation_3  1.000000e+02  # Constant
+   42 kf_mm_bind_4             1.000000e-06  # Constant
+   43 kr_mm_bind_4             1.000000e-01  # Constant
+   44 kc_mm_phosphorylation_4  1.000000e+02  # Constant
+   45 kf_mb_bind_2             1.000000e-06  # Constant
+   46 kr_mb_bind_2             1.000000e-01  # Constant
+   47 kc_mb_phosphorylation_2  1.000000e+02  # Constant
+   48 kf_mm_bind_5             1.000000e-06  # Constant
+   49 kr_mm_bind_5             1.000000e-01  # Constant
+   50 kc_mm_phosphorylation_5  1.000000e+02  # Constant
+   51 kf_mm_bind_6             1.000000e-06  # Constant
+   52 kr_mm_bind_6             1.000000e-01  # Constant
+   53 kc_mm_phosphorylation_6  1.000000e+02  # Constant
+   54 kf_drug_braf             1e-6  # Constant
+   55 kr_drug_braf             1e-1  # Constant
+   56 mapk1_p_decay_slow       1e-5  # Constant
+   57 kf_erk_phos              5e-6  # Constant
+   58 kr_erk_phos              1e-1  # Constant
+   59 kc_erk_phos              10  # Constant
+   60 kf_drug_phos             5e-7  # Constant
+   61 kr_drug_phos             1e-1  # Constant
+   62 map2k1_decay             5e-4  # Constant
+   63 _rateLaw1                map2k1_decay*100  # ConstantExpression
+   64 _rateLaw2                mapk1_p_decay_slow*50  # ConstantExpression
+   65 _rateLaw3                kf_erk_phos*55  # ConstantExpression
+   66 _rateLaw4                kc_erk_phos*55  # ConstantExpression
+end parameters
+begin species
+    1 GRB2(erbb,sos) GRB2_0
+    2 MAPK1(S~u,T~u,Y~u,braf,map2k1,mapk,mapk3) MAPK1_0
+    3 KRAS(gtpbound~inactive) KRAS_0
+    4 SOS1(catalytic~inactive,grb2) SOS1_0
+    5 MAP2K1(S~u,T~u,braf,mapk,mapk1,mapk3) MAP2K1_0
+    6 EGFR(Y~u,egfr_ligand,grb2,neg) EGFR_0
+    7 MAPK3(S~u,T~u,Y~u,braf,map2k1,mapk,mapk1,phos) MAPK3_0
+    8 BRAF(S~u,drug,map2k,mapk,mapk1,mapk3) BRAF_0
+    9 EGF(erbb) EGF_0
+   10 drug(braf) 0
+   11 phosphotase(drug,erk) 100000
+   12 BRAF(S~u,drug!1,map2k,mapk,mapk1,mapk3).drug(braf!1) 0
+   13 EGF(erbb!1).EGFR(Y~u,egfr_ligand!1,grb2,neg) 0
+   14 drug(braf!1).phosphotase(drug!1,erk) 0
+   15 EGF(erbb!1).EGFR(Y~p,egfr_ligand!1,grb2,neg) 0
+   16 EGF(erbb!1).EGFR(Y~u,egfr_ligand!1,grb2!2,neg).GRB2(erbb!2,sos) 0
+   17 EGF(erbb!1).EGFR(Y~p,egfr_ligand!1,grb2!2,neg).GRB2(erbb!2,sos) 0
+   18 EGFR(Y~p,egfr_ligand,grb2,neg) 0
+   19 EGFR(Y~u,egfr_ligand,grb2!1,neg).GRB2(erbb!1,sos) 0
+   20 EGF(erbb!1).EGFR(Y~u,egfr_ligand!1,grb2!2,neg).GRB2(erbb!2,sos!3).SOS1(catalytic~inactive,grb2!3) 0
+   21 EGF(erbb!1).EGFR(Y~p,egfr_ligand!1,grb2!2,neg).GRB2(erbb!2,sos!3).SOS1(catalytic~inactive,grb2!3) 0
+   22 GRB2(erbb,sos!1).SOS1(catalytic~inactive,grb2!1) 0
+   23 EGFR(Y~p,egfr_ligand,grb2!1,neg).GRB2(erbb!1,sos) 0
+   24 EGFR(Y~u,egfr_ligand,grb2!1,neg).GRB2(erbb!1,sos!2).SOS1(catalytic~inactive,grb2!2) 0
+   25 KRAS(gtpbound~active) 0
+   26 BRAF(S~p,drug,map2k,mapk,mapk1,mapk3) 0
+   27 BRAF(S~p,drug!1,map2k,mapk,mapk1,mapk3).drug(braf!1) 0
+   28 EGFR(Y~p,egfr_ligand,grb2!1,neg).GRB2(erbb!1,sos!2).SOS1(catalytic~inactive,grb2!2) 0
+   29 BRAF(S~p,drug,map2k!1,mapk,mapk1,mapk3).MAP2K1(S~u,T~u,braf!1,mapk,mapk1,mapk3) 0
+   30 BRAF(S~p,drug!1,map2k!2,mapk,mapk1,mapk3).MAP2K1(S~u,T~u,braf!2,mapk,mapk1,mapk3).drug(braf!1) 0
+   31 MAP2K1(S~p,T~u,braf,mapk,mapk1,mapk3) 0
+   32 MAP2K1(S~p,T~u,braf,mapk!1,mapk1,mapk3).MAPK1(S~u,T~u,Y~u,braf,map2k1!1,mapk,mapk3) 0
+   33 MAP2K1(S~p,T~u,braf,mapk!1,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!1,mapk,mapk1,phos) 0
+   34 MAPK1(S~u,T~p,Y~u,braf,map2k1,mapk,mapk3) 0
+   35 MAPK3(S~u,T~p,Y~u,braf,map2k1,mapk,mapk1,phos) 0
+   36 MAP2K1(S~u,T~u,braf,mapk!1,mapk1,mapk3).MAPK1(S~u,T~u,Y~u,braf,map2k1!1,mapk,mapk3) 0
+   37 MAP2K1(S~u,T~u,braf,mapk!1,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!1,mapk,mapk1,phos) 0
+   38 BRAF(S~p,drug,map2k!1,mapk,mapk1,mapk3).MAP2K1(S~u,T~u,braf!1,mapk!2,mapk1,mapk3).MAPK1(S~u,T~u,Y~u,braf,map2k1!2,mapk,mapk3) 0
+   39 BRAF(S~p,drug,map2k!1,mapk,mapk1,mapk3).MAP2K1(S~u,T~u,braf!1,mapk!2,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!2,mapk,mapk1,phos) 0
+   40 MAPK3(S~u,T~p,Y~u,braf,map2k1,mapk,mapk1,phos!1).phosphotase(drug,erk!1) 0
+   41 BRAF(S~p,drug!1,map2k!2,mapk,mapk1,mapk3).MAP2K1(S~u,T~u,braf!2,mapk!3,mapk1,mapk3).MAPK1(S~u,T~u,Y~u,braf,map2k1!3,mapk,mapk3).drug(braf!1) 0
+   42 BRAF(S~p,drug!1,map2k!2,mapk,mapk1,mapk3).MAP2K1(S~u,T~u,braf!2,mapk!3,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!3,mapk,mapk1,phos).drug(braf!1) 0
+   43 MAPK3(S~u,T~u,Y~u,braf,map2k1,mapk,mapk1,phos!1).phosphotase(drug,erk!1) 0
+   44 MAPK3(S~u,T~p,Y~u,braf,map2k1,mapk,mapk1,phos!1).drug(braf!2).phosphotase(drug!2,erk!1) 0
+   45 MAP2K1(S~p,T~u,braf,mapk!1,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!1,mapk,mapk1,phos!2).phosphotase(drug,erk!2) 0
+   46 MAPK3(S~u,T~u,Y~u,braf,map2k1,mapk,mapk1,phos!1).drug(braf!2).phosphotase(drug!2,erk!1) 0
+   47 MAP2K1(S~p,T~u,braf,mapk!1,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!1,mapk,mapk1,phos!2).drug(braf!3).phosphotase(drug!3,erk!2) 0
+   48 MAP2K1(S~u,T~u,braf,mapk!1,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!1,mapk,mapk1,phos!2).phosphotase(drug,erk!2) 0
+   49 BRAF(S~p,drug,map2k!1,mapk,mapk1,mapk3).MAP2K1(S~u,T~u,braf!1,mapk!2,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!2,mapk,mapk1,phos!3).phosphotase(drug,erk!3) 0
+   50 MAP2K1(S~u,T~u,braf,mapk!1,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!1,mapk,mapk1,phos!2).drug(braf!3).phosphotase(drug!3,erk!2) 0
+   51 BRAF(S~p,drug!1,map2k!2,mapk,mapk1,mapk3).MAP2K1(S~u,T~u,braf!2,mapk!3,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!3,mapk,mapk1,phos!4).drug(braf!1).phosphotase(drug,erk!4) 0
+   52 BRAF(S~p,drug,map2k!1,mapk,mapk1,mapk3).MAP2K1(S~u,T~u,braf!1,mapk!2,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!2,mapk,mapk1,phos!3).drug(braf!4).phosphotase(drug!4,erk!3) 0
+   53 BRAF(S~p,drug!1,map2k!2,mapk,mapk1,mapk3).MAP2K1(S~u,T~u,braf!2,mapk!3,mapk1,mapk3).MAPK3(S~u,T~u,Y~u,braf,map2k1!3,mapk,mapk1,phos!4).drug(braf!5).drug(braf!1).phosphotase(drug!5,erk!4) 0
+end species
+begin reactions
+    1 8,10 12 kf_drug_braf #_R1
+    2 6,9 13 kf_ee_bind_1 #EGF_EGFR_bind
+    3 10,11 14 kf_drug_phos #_R7
+    4 12 8,10 kr_drug_braf #_reverse__R1
+    5 13 15 kf_e_autophos_1 #EGFR_EGF_EGF_EGF_autophospho_EGFR_EGF_EGF_EGF_Y
+    6 1,13 16 kf_eg_bind_1 #EGFR_EGF_EGF_EGF_GRB2_bind
+    7 13 6,9 kr_ee_bind_1 #EGF_EGFR_dissociate
+    8 14 10,11 kr_drug_phos #_reverse__R7
+    9 16 17 kf_e_autophos_1 #EGFR_EGF_EGF_EGF_autophospho_EGFR_EGF_EGF_EGF_Y
+   10 1,15 17 kf_eg_bind_1 #EGFR_EGF_EGF_EGF_GRB2_bind
+   11 16 1,13 kr_eg_bind_1 #EGFR_GRB2_dissociate
+   12 15 9,18 kr_ee_bind_1 #EGF_EGFR_dissociate
+   13 16 9,19 kr_ee_bind_1 #EGF_EGFR_dissociate
+   14 4,16 20 kf_gs_bind_1 #GRB2_EGFR_EGFR_SOS1_bind
+   15 20 21 kf_e_autophos_1 #EGFR_EGF_EGF_EGF_autophospho_EGFR_EGF_EGF_EGF_Y
+   16 17 1,15 kr_eg_bind_1 #EGFR_GRB2_dissociate
+   17 19 1,6 kr_eg_bind_1 #EGFR_GRB2_dissociate
+   18 20 13,22 kr_eg_bind_1 #EGFR_GRB2_dissociate
+   19 9,18 15 kf_ee_bind_1 #EGF_EGFR_bind
+   20 9,19 16 kf_ee_bind_1 #EGF_EGFR_bind
+   21 17 9,23 kr_ee_bind_1 #EGF_EGFR_dissociate
+   22 20 9,24 kr_ee_bind_1 #EGF_EGFR_dissociate
+   23 4,17 21 kf_gs_bind_1 #GRB2_EGFR_EGFR_SOS1_bind
+   24 4,19 24 kf_gs_bind_1 #GRB2_EGFR_EGFR_SOS1_bind
+   25 20 4,16 kr_gs_bind_1 #GRB2_SOS1_dissociate
+   26 3,20 20,25 kf_sk_gef_1 #SOS1_activates_KRAS
+   27 8,25 25,26 kf_kb_act_1 #KRAS_activates_BRAF_activity
+   28 12,25 25,27 kf_kb_act_1 #KRAS_activates_BRAF_activity
+   29 13,22 20 kf_eg_bind_1 #EGFR_EGF_EGF_EGF_GRB2_bind
+   30 15,22 21 kf_eg_bind_1 #EGFR_EGF_EGF_EGF_GRB2_bind
+   31 21 15,22 kr_eg_bind_1 #EGFR_GRB2_dissociate
+   32 23 1,18 kr_eg_bind_1 #EGFR_GRB2_dissociate
+   33 24 6,22 kr_eg_bind_1 #EGFR_GRB2_dissociate
+   34 9,23 17 kf_ee_bind_1 #EGF_EGFR_bind
+   35 9,24 20 kf_ee_bind_1 #EGF_EGFR_bind
+   36 21 9,28 kr_ee_bind_1 #EGF_EGFR_dissociate
+   37 4,23 28 kf_gs_bind_1 #GRB2_EGFR_EGFR_SOS1_bind
+   38 21 4,17 kr_gs_bind_1 #GRB2_SOS1_dissociate
+   39 22 1,4 kr_gs_bind_1 #GRB2_SOS1_dissociate
+   40 24 4,19 kr_gs_bind_1 #GRB2_SOS1_dissociate
+   41 3,21 21,25 kf_sk_gef_1 #SOS1_activates_KRAS
+   42 3,22 22,25 kf_sk_gef_1 #SOS1_activates_KRAS
+   43 3,24 24,25 kf_sk_gef_1 #SOS1_activates_KRAS
+   44 10,26 27 kf_drug_braf #_R1
+   45 27 10,26 kr_drug_braf #_reverse__R1
+   46 28 18,22 kr_eg_bind_1 #EGFR_GRB2_dissociate
+   47 9,28 21 kf_ee_bind_1 #EGF_EGFR_bind
+   48 28 4,23 kr_gs_bind_1 #GRB2_SOS1_dissociate
+   49 3,28 25,28 kf_sk_gef_1 #SOS1_activates_KRAS
+   50 5,26 29 kf_bm_bind_1 #BRAF_phosphoS_phosphorylation_bind_MAP2K1_S
+   51 10,29 30 kf_drug_braf #_R1
+   52 29 26,31 kc_bm_phosphorylation_1 #BRAF_phosphoS_phosphorylation_MAP2K1_S
+   53 29 5,26 kr_bm_bind_1 #BRAF_dissoc_MAP2K1
+   54 30 10,29 kr_drug_braf #_reverse__R1
+   55 30 5,27 kr_bm_bind_1 #BRAF_dissoc_MAP2K1
+   56 2,31 32 kf_mm_bind_1 #MAP2K1_phosphoS_phosphorylation_bind_MAPK1_T
+   57 7,31 33 kf_mm_bind_2 #MAP2K1_phosphoS_phosphorylation_bind_MAPK3_T
+   58 31 5 _rateLaw1 #_R2
+   59 32 31,34 kc_mm_phosphorylation_1 #MAP2K1_phosphoS_phosphorylation_MAPK1_T
+   60 32 2,31 kr_mm_bind_1 #MAP2K1_dissoc_MAPK1
+   61 33 31,35 kc_mm_phosphorylation_2 #MAP2K1_phosphoS_phosphorylation_MAPK3_T
+   62 33 7,31 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+   63 32 36 _rateLaw1 #_R2
+   64 33 37 _rateLaw1 #_R2
+   65 26,36 38 kf_bm_bind_1 #BRAF_phosphoS_phosphorylation_bind_MAP2K1_S
+   66 26,37 39 kf_bm_bind_1 #BRAF_phosphoS_phosphorylation_bind_MAP2K1_S
+   67 36 2,5 kr_mm_bind_1 #MAP2K1_dissoc_MAPK1
+   68 37 5,7 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+   69 35 7 _rateLaw2 #_R3
+   70 11,35 40 _rateLaw3 #_R4
+   71 10,38 41 kf_drug_braf #_R1
+   72 10,39 42 kf_drug_braf #_R1
+   73 38 26,32 kc_bm_phosphorylation_1 #BRAF_phosphoS_phosphorylation_MAP2K1_S
+   74 39 26,33 kc_bm_phosphorylation_1 #BRAF_phosphoS_phosphorylation_MAP2K1_S
+   75 38 26,36 kr_bm_bind_1 #BRAF_dissoc_MAP2K1
+   76 39 26,37 kr_bm_bind_1 #BRAF_dissoc_MAP2K1
+   77 38 2,29 kr_mm_bind_1 #MAP2K1_dissoc_MAPK1
+   78 39 7,29 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+   79 40 43 _rateLaw2 #_R3
+   80 40 11,35 kr_erk_phos #_R5
+   81 40 7,11 _rateLaw4 #_R6
+   82 10,40 44 kf_drug_phos #_R7
+   83 41 10,38 kr_drug_braf #_reverse__R1
+   84 42 10,39 kr_drug_braf #_reverse__R1
+   85 41 27,36 kr_bm_bind_1 #BRAF_dissoc_MAP2K1
+   86 42 27,37 kr_bm_bind_1 #BRAF_dissoc_MAP2K1
+   87 41 2,30 kr_mm_bind_1 #MAP2K1_dissoc_MAPK1
+   88 31,43 45 kf_mm_bind_2 #MAP2K1_phosphoS_phosphorylation_bind_MAPK3_T
+   89 42 7,30 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+   90 44 46 _rateLaw2 #_R3
+   91 43 7,11 kr_erk_phos #_R5
+   92 44 14,35 kr_erk_phos #_R5
+   93 10,43 46 kf_drug_phos #_R7
+   94 44 10,40 kr_drug_phos #_reverse__R7
+   95 31,46 47 kf_mm_bind_2 #MAP2K1_phosphoS_phosphorylation_bind_MAPK3_T
+   96 45 31,40 kc_mm_phosphorylation_2 #MAP2K1_phosphoS_phosphorylation_MAPK3_T
+   97 45 31,43 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+   98 45 48 _rateLaw1 #_R2
+   99 45 11,33 kr_erk_phos #_R5
+  100 46 7,14 kr_erk_phos #_R5
+  101 10,45 47 kf_drug_phos #_R7
+  102 46 10,43 kr_drug_phos #_reverse__R7
+  103 26,48 49 kf_bm_bind_1 #BRAF_phosphoS_phosphorylation_bind_MAP2K1_S
+  104 47 31,44 kc_mm_phosphorylation_2 #MAP2K1_phosphoS_phosphorylation_MAPK3_T
+  105 47 31,46 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+  106 48 5,43 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+  107 47 50 _rateLaw1 #_R2
+  108 47 14,33 kr_erk_phos #_R5
+  109 48 11,37 kr_erk_phos #_R5
+  110 10,48 50 kf_drug_phos #_R7
+  111 47 10,45 kr_drug_phos #_reverse__R7
+  112 10,49 51 kf_drug_braf #_R1
+  113 26,50 52 kf_bm_bind_1 #BRAF_phosphoS_phosphorylation_bind_MAP2K1_S
+  114 49 26,45 kc_bm_phosphorylation_1 #BRAF_phosphoS_phosphorylation_MAP2K1_S
+  115 49 26,48 kr_bm_bind_1 #BRAF_dissoc_MAP2K1
+  116 49 29,43 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+  117 50 5,46 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+  118 49 11,39 kr_erk_phos #_R5
+  119 50 14,37 kr_erk_phos #_R5
+  120 10,49 52 kf_drug_phos #_R7
+  121 50 10,48 kr_drug_phos #_reverse__R7
+  122 10,52 53 kf_drug_braf #_R1
+  123 51 10,49 kr_drug_braf #_reverse__R1
+  124 52 26,47 kc_bm_phosphorylation_1 #BRAF_phosphoS_phosphorylation_MAP2K1_S
+  125 51 27,48 kr_bm_bind_1 #BRAF_dissoc_MAP2K1
+  126 52 26,50 kr_bm_bind_1 #BRAF_dissoc_MAP2K1
+  127 51 30,43 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+  128 52 29,46 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+  129 51 11,42 kr_erk_phos #_R5
+  130 52 14,39 kr_erk_phos #_R5
+  131 10,51 53 kf_drug_phos #_R7
+  132 52 10,49 kr_drug_phos #_reverse__R7
+  133 53 10,52 kr_drug_braf #_reverse__R1
+  134 53 27,50 kr_bm_bind_1 #BRAF_dissoc_MAP2K1
+  135 53 30,46 kr_mm_bind_2 #MAP2K1_dissoc_MAPK3
+  136 53 14,42 kr_erk_phos #_R5
+  137 53 10,51 kr_drug_phos #_reverse__R7
+end reactions
+begin groups
+    1 erk_phos             35,40,44
+    2 totalerk             7,33,35,37,39,40,42,43,44,45,46,47,48,49,50,51,52,53
+    3 active_map2k1        31,32,33,45,47
+    4 mek_erk              
+    5 totalbraf            8,12,26,27,29,30,38,39,41,42,49,51,52,53
+    6 active_braf          26,29,38,39,49,52
+    7 phos_free            11,40,43,45,48,49,51
+    8 phos_drugged         14,44,46,47,50,52,53
+    9 drug_total           10,12,14,27,30,41,42,44,46,47,50,51,52,2*53
+   10 drug_bound           12,14,27,30,41,42,44,46,47,50,51,52,2*53
+end groups
