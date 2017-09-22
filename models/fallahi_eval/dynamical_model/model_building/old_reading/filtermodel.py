@@ -24,9 +24,12 @@ allgenes_reduced.remove('MAPK9')
 allgenes_reduced.remove('MAPK14')
 allgenes_reduced.remove('NFKB1')
 allgenes_reduced.remove('RELA')
-
+allgenes_reduced.remove('HIST3H3')
+allgenes_reduced.remove('AKT3')
+allgenes_reduced.remove('HSPB1')
 
 #stmts = ac.load_statements('my_reading/stmts_preassembled_fixed_be_filtering.pkl')
+stmts = ac.load_statements('fallahi_eval_pysb_stmts_updated.pkl')
 
 #all_stmts = ac.filter_gene_list(stmts, allgenes, 'all')
 all_stmts = ac.filter_gene_list(stmts, allgenes_reduced, 'all')
@@ -41,9 +44,13 @@ exp_stmts = ac.filter_gene_list(stmts, observablegenes, 'one')
 #model1 = pa.make_model()
 
 #bngl_model_filter = pysb.export.export(model1,'bngl')
-#bngl_file_filter = open('rbm/second_pass.bngl','w')
+#bngl_file_filter = open('rbm/final_version/filtered_unmodified.bngl','w')
 #bngl_file_filter.write(bngl_model_filter)
 #bngl_file_filter.close()
+
+#with open('rbm/final_version/filtered_unmodified_stmts.txt','w') as f:
+#    for item in all_stmts:
+#        f.write("%s\n" % item)
 
 
 ##to remove

@@ -13,7 +13,7 @@
 #iterate stopping on an enzymatic (non Complex?) statement 
 
 
-stmts = ac.load_statements('/home/bobby/Dropbox/Sorger_Lab/BigMech/reporting_and_eval/phase3_eval_pt2/model_building/secondpass_model_stmts.pkl')
+#stmts = ac.load_statements('/home/bobby/Dropbox/Sorger_Lab/BigMech/reporting_and_eval/phase3_eval_pt2/model_building/secondpass_model_stmts.pkl')
 
 #save rec stmts?
 #call other function?
@@ -52,11 +52,14 @@ for st in rec_nolig_st_touse:
 
 
 primary_st=[]
+non_primary_st = []
 for prot in primary_binders_dict.keys():
-    for st in stmts:
+    for st in final_st:                 ##########VARIABLE STATEMENT LIST HERE
         for ag in st.agent_list():
             if prot.entity_matches(ag):
                 primary_st.append(st)   #should be checking for receptor, not sure how
+            else:
+                non_primary_st.append(st)
     
 #
 primary_st_test = primary_st[:]
@@ -78,6 +81,22 @@ for st in primary_st_test:
                 ag.bound_conditions = ag.bound_conditions + [BoundCondition(primary_binders_dict[ag2])] #FIX REC REFERENCE actually just need coresponding receptor, not whole stmt 
 
 
+new_bound_conditions = []
+for st in primary_st_test:
+    for ag in st.agent_list():
+        if len(ag.bound_conditions) > 1:
+            new_bound_conditions.append(ag.bound_conditions[0])
+            for bc in ag.bound_conditions[1:]:
+                if bc.agent.entity_matches(new_bound_conditions[-1].agent):
+                    pass
+                else:
+                    new_bound_conditions.append(bc)
+            ag.bound_conditions = new_bound_conditions
+            
+
+
+final_st = primary_st_test + non_primary_st
+final_st = ac.Preassembler.combine_duplicate_stmts(final_st)
 
 #should continue this on with mtor - Complex(AKT1(bound: [EGFR, True]), MTOR()),
 #all other stmts are phosphorylation

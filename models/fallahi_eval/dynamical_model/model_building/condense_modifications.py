@@ -177,29 +177,29 @@ def coarse_grain_substrate_context(stmts):
     filtered_stmts = non_phos_stmts + new_phos_stmts
     return filtered_stmts
 
-stmts = my_model_stmts_larger[:]
-stmts = coarse_grain_phos_on_af(stmts)
-stmts = remove_redundant_phosphorylations(stmts)
-stmts = coarse_grain_kinase_context(stmts)
+#stmts = my_model_stmts_larger[:]
+#stmts = coarse_grain_phos_on_af(stmts)
+#stmts = remove_redundant_phosphorylations(stmts)
+#stmts = coarse_grain_kinase_context(stmts)
 
-pa = PysbAssembler('two_step')
-pa.add_statements(my_model_stmts_larger)
-model = pa.make_model()
+#pa = PysbAssembler('two_step')
+#pa.add_statements(my_model_stmts_larger)
+#model = pa.make_model()
 
-bngl_model_filter = pysb.export.export(model,'bngl')
-bngl_file_filter = open('rbm/egfr_small_no_cg.bngl','w')
-bngl_file_filter.write(bngl_model_filter)
-bngl_file_filter.close()
+#bngl_model_filter = pysb.export.export(model,'bngl')
+#bngl_file_filter = open('rbm/egfr_small_no_cg.bngl','w')
+#bngl_file_filter.write(bngl_model_filter)
+#bngl_file_filter.close()
 
 
-pa = PysbAssembler('two_step')
-pa.add_statements(stmts)
-model = pa.make_model()
+#pa = PysbAssembler('two_step')
+#pa.add_statements(stmts)
+#model = pa.make_model()
 
-bngl_model_filter = pysb.export.export(model,'bngl')
-bngl_file_filter = open('rbm/group_meeting_6_5_17/small.bngl','w')
-bngl_file_filter.write(bngl_model_filter)
-bngl_file_filter.close()
+#bngl_model_filter = pysb.export.export(model,'bngl')
+#bngl_file_filter = open('rbm/group_meeting_6_5_17/small.bngl','w')
+#bngl_file_filter.write(bngl_model_filter)
+#bngl_file_filter.close()
 
 
 
