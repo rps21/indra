@@ -102,6 +102,7 @@ class TripsProcessor(object):
         """
         self.all_events = {}
         events = self.tree.findall('EVENT')
+        events += self.tree.findall('CC')
         for e in events:
             event_id = e.attrib['id']
             if event_id in self._static_events:
@@ -633,7 +634,66 @@ class TripsProcessor(object):
         mod_events = []
         for mod_event_type in mod_event_types:
             events = self.tree.findall("EVENT/[type='%s']" % mod_event_type)
-            mod_events += events
+            mod_extracted = self.extracted_events.get(mod_event_type, [])
+            for event in events:
+                event_id = event.attrib.get('id')
+                if event_id not in mod_extracted:
+                    mod_events.append(event)
+
+        # Iterate over all modification events
+        for event in mod_events:
+            stmts = self._get_modification_event(event)
+            if stmts:
+                for stmt in stmts:
+                    self.statements.append(stmt)
+
+    def get_modifications_indirect(self):
+        """Extract indirect Modification INDRA Statements."""
+        # Get all the specific mod types
+        mod_event_types = list(ont_to_mod_type.keys())
+        # Add ONT::PTMs as a special case
+        mod_event_types += ['ONT::PTM']
+
+        def get_increase_events(mod_event_types):
+            mod_events = []
+            events = self.tree.findall("EVENT/[type='ONT::INCREASE']")
+            for event in events:
+                affected = event.find(".//*[@role=':AFFECTED']")
+                if affected is None:
+                    continue
+                affected_id = affected.attrib.get('id')
+                if not affected_id:
+                    continue
+                pattern = "EVENT/[@id='%s']" % affected_id
+                affected_event = self.tree.find(pattern)
+                if affected_event is not None:
+                    affected_type = affected_event.find('type')
+                    if affected_type is not None and \
+                        affected_type.text in mod_event_types:
+                        mod_events.append(event)
+            return mod_events
+
+        def get_cause_events(mod_event_types):
+            mod_events = []
+            ccs = self.tree.findall("CC/[type='ONT::CAUSE']")
+            for cc in ccs:
+                outcome = cc.find(".//*[@role=':OUTCOME']")
+                if outcome is None:
+                    continue
+                outcome_id = outcome.attrib.get('id')
+                if not outcome_id:
+                    continue
+                pattern = "EVENT/[@id='%s']" % outcome_id
+                outcome_event = self.tree.find(pattern)
+                if outcome_event is not None:
+                    outcome_type = outcome_event.find('type')
+                    if outcome_type is not None and \
+                        outcome_type.text in mod_event_types:
+                        mod_events.append(cc)
+            return mod_events
+
+        mod_events = get_increase_events(mod_event_types)
+        mod_events += get_cause_events(mod_event_types)
 
         # Iterate over all modification events
         for event in mod_events:
@@ -641,114 +701,164 @@ class TripsProcessor(object):
             if event_id in self._static_events:
                 continue
             event_type = _get_type(event)
-            if event_type == 'ONT::PTM':
-                name = event.find('name')
-                if name is not None:
-                    name = name.text
-                    mod = ptm_to_mod_type.get(name)
-                    if mod is None:
-                        logger.warning('Unhandled PTM subtype: %s' % name)
-                        continue
-                else:
-                    continue
-            else:
-                mod = ont_to_mod_type.get(event_type)
 
             # Get enzyme Agent
             enzyme = event.find(".//*[@role=':AGENT']")
             if enzyme is None:
-                enzyme_agent = None
-            else:
-                enzyme_id = enzyme.attrib.get('id')
-                if enzyme_id is None:
-                    continue
-                enzyme_agent = self._get_agent_by_id(enzyme_id, event_id)
+                enzyme = event.find(".//*[@role=':FACTOR']")
+                if enzyme is None:
+                    return
 
-            # Get substrate Agent
-            affected = event.find(".//*[@role=':AFFECTED']")
-            if affected is None:
-                logger.debug('Skipping modification event with no '
-                             'affected term.')
+            enzyme_id = enzyme.attrib.get('id')
+            if enzyme_id is None:
                 continue
-            affected_id = affected.attrib.get('id')
-            if affected_id is None:
-                continue
-            affected_agent = self._get_agent_by_id(affected_id, event_id)
-            if affected_agent is None:
-                logger.debug('Skipping modification event with no '
-                             'affected term.')
-                continue
+            enzyme_agent = self._get_agent_by_id(enzyme_id, event_id)
 
-            # Get modification sites
-            mods = self._get_modification(event)
+            affected_event_tag = event.find(".//*[@role=':AFFECTED']")
+            if affected_event_tag is None:
+                affected_event_tag = event.find(".//*[@role=':OUTCOME']")
+                if affected_event_tag is None:
+                    return
+            affected_id = affected_event_tag.attrib.get('id')
+            if not affected_id:
+                return
+            affected_event = self.tree.find("EVENT/[@id='%s']" % affected_id)
+            if affected_event is None:
+                return
 
-            # Get evidence and location
-            ev = self._get_evidence(event)
-            location = self._get_event_location(event)
+            stmts = self._get_modification_event(affected_event)
+            stmts_to_make = []
+            if stmts:
+                for stmt in stmts:
+                    # The affected event should have no enzyme but should
+                    # have a substrate
+                    if stmt.enz is None and stmt.sub is not None:
+                        stmts_to_make.append(stmt)
 
-            mod_types = event.findall('mods/mod/type')
+            for stmt in stmts_to_make:
+                stmt.enz = enzyme_agent
+                for ev in stmt.evidence:
+                    ev.epistemics['direct'] = False
+                self.statements.append(stmt)
 
-            # Trans and Auto are unique to Phosphorylation
-            if _is_type(event, 'ONT::PHOSPHORYLATION'):
-                # Transphosphorylation
-                if enzyme_agent is not None and \
-                        'ONT::ACROSS' in [mt.text for mt in mod_types]:
-                    agent_bound = Agent(affected_agent.name)
-                    enzyme_agent.bound_conditions = \
-                        [BoundCondition(agent_bound, True)]
-                    for m in mods:
-                        st = Transphosphorylation(enzyme_agent, m.residue,
-                                                  m.position, evidence=[ev])
-                        _stmt_location_to_agents(st, location)
-                        self.statements.append(st)
-                    continue
-                # Autophosphorylation
-                elif enzyme_agent is not None and (enzyme_id == affected_id):
-                    for m in mods:
-                        if isinstance(enzyme_agent, list):
-                            for ea in enzyme_agent:
-                                st = Autophosphorylation(ea,
-                                                     m.residue, m.position,
-                                                     evidence=[ev])
-                                _stmt_location_to_agents(st, location)
-                                self.statements.append(st)
-                        else:
-                            st = Autophosphorylation(enzyme_agent,
-                                                     m.residue, m.position,
-                                                     evidence=[ev])
-                            _stmt_location_to_agents(st, location)
-                            self.statements.append(st)
-                    continue
-                elif affected_agent is not None and \
-                     'ONT::MANNER-REFL' in [mt.text for mt in mod_types]:
-                    for m in mods:
-                        if isinstance(affected_agent, list):
-                            for aa in affected_agent:
-                                st = Autophosphorylation(aa,
-                                                         m.residue, m.position,
-                                                         evidence=[ev])
-                                _stmt_location_to_agents(st, location)
-                                self.statements.append(st)
-                        else:
-                            st = Autophosphorylation(affected_agent,
-                                                     m.residue, m.position,
-                                                     evidence=[ev])
-                            _stmt_location_to_agents(st, location)
-                            self.statements.append(st)
-                    continue
-
-            if 'ONT::MANNER-UNDO' in [mt.text for mt in mod_types]:
-                mod_stmt = modclass_to_inverse[modtype_to_modclass[mod]]
-            else:
-                mod_stmt = modtype_to_modclass[mod]
-            for ea, aa in _agent_list_product((enzyme_agent, affected_agent)):
-                if aa is None:
-                    continue
-                for m in mods:
-                    st = mod_stmt(ea, aa, m.residue, m.position, evidence=ev)
-                    _stmt_location_to_agents(st, location)
-                    self.statements.append(st)
             self._add_extracted(event_type, event.attrib['id'])
+            self._add_extracted(affected_event.find('type').text, affected_id)
+
+    def _get_modification_event(self, event):
+        stmts = []
+        event_id = event.attrib['id']
+        if event_id in self._static_events:
+            return
+        event_type = _get_type(event)
+        if event_type == 'ONT::PTM':
+            name = event.find('name')
+            if name is not None:
+                name = name.text
+                mod = ptm_to_mod_type.get(name)
+                if mod is None:
+                    logger.warning('Unhandled PTM subtype: %s' % name)
+                    return
+            else:
+                return
+        else:
+            mod = ont_to_mod_type.get(event_type)
+
+        # Get enzyme Agent
+        enzyme = event.find(".//*[@role=':AGENT']")
+        if enzyme is None:
+            enzyme_agent = None
+        else:
+            enzyme_id = enzyme.attrib.get('id')
+            if enzyme_id is None:
+                return
+            enzyme_agent = self._get_agent_by_id(enzyme_id, event_id)
+
+        # Get substrate Agent
+        affected = event.find(".//*[@role=':AFFECTED']")
+        if affected is None:
+            logger.debug('Skipping modification event with no '
+                         'affected term.')
+            return
+        affected_id = affected.attrib.get('id')
+        if affected_id is None:
+            return
+        affected_agent = self._get_agent_by_id(affected_id, event_id)
+        if affected_agent is None:
+            logger.debug('Skipping modification event with no '
+                         'affected term.')
+            return
+
+        # Get modification sites
+        mods = self._get_modification(event)
+
+        # Get evidence and location
+        ev = self._get_evidence(event)
+        location = self._get_event_location(event)
+
+        mod_types = event.findall('mods/mod/type')
+
+        # Trans and Auto are unique to Phosphorylation
+        if _is_type(event, 'ONT::PHOSPHORYLATION'):
+            # Transphosphorylation
+            if enzyme_agent is not None and \
+                    'ONT::ACROSS' in [mt.text for mt in mod_types]:
+                agent_bound = Agent(affected_agent.name)
+                enzyme_agent.bound_conditions = \
+                    [BoundCondition(agent_bound, True)]
+                for m in mods:
+                    st = Transphosphorylation(enzyme_agent, m.residue,
+                                              m.position, evidence=[ev])
+                    _stmt_location_to_agents(st, location)
+                    stmts.append(st)
+                return stmts
+            # Autophosphorylation
+            elif enzyme_agent is not None and (enzyme_id == affected_id):
+                for m in mods:
+                    if isinstance(enzyme_agent, list):
+                        for ea in enzyme_agent:
+                            st = Autophosphorylation(ea,
+                                                 m.residue, m.position,
+                                                 evidence=[ev])
+                            _stmt_location_to_agents(st, location)
+                            stmts.append(st)
+                    else:
+                        st = Autophosphorylation(enzyme_agent,
+                                                 m.residue, m.position,
+                                                 evidence=[ev])
+                        _stmt_location_to_agents(st, location)
+                        stmts.append(st)
+                return stmts
+            elif affected_agent is not None and \
+                 'ONT::MANNER-REFL' in [mt.text for mt in mod_types]:
+                for m in mods:
+                    if isinstance(affected_agent, list):
+                        for aa in affected_agent:
+                            st = Autophosphorylation(aa,
+                                                     m.residue, m.position,
+                                                     evidence=[ev])
+                            _stmt_location_to_agents(st, location)
+                            stmts.append(st)
+                    else:
+                        st = Autophosphorylation(affected_agent,
+                                                 m.residue, m.position,
+                                                 evidence=[ev])
+                        _stmt_location_to_agents(st, location)
+                        stmts.append(st)
+                return stmts
+
+        if 'ONT::MANNER-UNDO' in [mt.text for mt in mod_types]:
+            mod_stmt = modclass_to_inverse[modtype_to_modclass[mod]]
+        else:
+            mod_stmt = modtype_to_modclass[mod]
+        for ea, aa in _agent_list_product((enzyme_agent, affected_agent)):
+            if aa is None:
+                continue
+            for m in mods:
+                st = mod_stmt(ea, aa, m.residue, m.position, evidence=ev)
+                _stmt_location_to_agents(st, location)
+                stmts.append(st)
+        self._add_extracted(event_type, event.attrib['id'])
+        return stmts
 
     def get_translocation(self):
         translocation_events = \
@@ -854,6 +964,29 @@ class TripsProcessor(object):
             location = self._get_event_location(event)
             _stmt_location_to_agents(st, location)
             self.statements.append(st)
+
+    def get_agents(self):
+        """Return list of INDRA Agents corresponding to TERMs in the EKB.
+
+        This is meant to be used when entities e.g. "phosphorylated ERK",
+        rather than events need to be extracted from processed natural
+        language. These entities with their respective states are represented
+        as INDRA Agents.
+
+        Returns
+        -------
+        agents : list[indra.statements.Agent]
+            List of INDRA Agents extracted from EKB.
+        """
+        terms = self.tree.findall('TERM')
+        agents = []
+        for term in terms:
+            term_id = term.attrib.get('id')
+            if term_id:
+                agent = self._get_agent_by_id(term_id, None)
+                if agent:
+                    agents.append(agent)
+        return agents
 
     def _get_cell_loc_by_id(self, term_id):
         term = self.tree.find("TERM/[@id='%s']" % term_id)
@@ -1073,6 +1206,11 @@ class TripsProcessor(object):
             agent.mods = mods
             return
 
+        # Activated precondition
+        if precond_event_type == 'ONT::ACTIVATE':
+            agent.activity = ActivityCondition('activity', True)
+            return
+
         # Binding precondition
         if precond_event_type == 'ONT::BIND':
             arg1 = precond_event.find('arg1')
@@ -1243,6 +1381,14 @@ class TripsProcessor(object):
             is_modified = False
         else:
             is_modified = True
+
+        #Check if we have an undo mod
+        event_mods = event.findall('mods/mod')
+        for event_mod in event_mods:
+            event_mod_type = event_mod.find('type')
+            if event_mod_type is not None and \
+                event_mod_type.text == 'ONT::MANNER-UNDO':
+                is_modified = False
 
         # Find the site of the modification
         site_tag = event.find("site")
@@ -1464,6 +1610,14 @@ def _get_db_refs(term):
     agent_text_tag = term.find('name')
     if agent_text_tag is not None:
         db_refs['TEXT'] = agent_text_tag.text
+        # If we have some drum-terms, the matched-name of the first
+        # drum-term (e.g. "MAP2K1") is a better value for TEXT than
+        # the name of the TERM (e.g. "MAP-2-K-1") so we put that in there
+        drum_terms = term.findall('drum-terms/drum-term')
+        if drum_terms:
+            matched_name = drum_terms[0].attrib.get('matched-name')
+            if matched_name:
+                db_refs['TEXT'] = matched_name
 
     # We make a list of scored grounding terms from the DRUM terms
     grounding_terms = _get_grounding_terms(term)

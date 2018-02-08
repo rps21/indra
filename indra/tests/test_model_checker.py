@@ -1,20 +1,26 @@
 from __future__ import absolute_import, print_function, unicode_literals
 from builtins import dict, str
+import os
 import pickle
+import random
+import numpy as np
+import pygraphviz as pgv
 from indra.statements import *
+from collections import Counter
 from pysb import *
 from pysb.core import SelfExporter
 from pysb.tools import render_reactions
 from indra.explanation.model_checker import ModelChecker, _mp_embeds_into, \
                                       _cp_embeds_into, _match_lhs, \
-                                      _stmt_from_rule, PathResult, \
+                                      stmt_from_rule, PathResult, \
                                       remove_im_params
-from indra.assemblers.pysb_assembler import PysbAssembler
+from indra.assemblers.pysb_assembler import PysbAssembler, \
+                                            set_base_initial_condition
 from pysb.tools import species_graph
 from pysb.bng import generate_equations
 from pysb import kappa
 from pysb.testing import with_model
-import pygraphviz as pgv
+
 
 @with_model
 def test_mp_embedding():
@@ -30,9 +36,10 @@ def test_mp_embedding():
     assert not _mp_embeds_into(mp3, mp1)
     assert not _mp_embeds_into(mp1, mp3)
 
+
 @with_model
 def test_cp_embedding():
-    Monomer('A', ['b', 'other'], {'other':['u','p']})
+    Monomer('A', ['b', 'other'], {'other': ['u','p']})
     Monomer('B', ['b'])
     cp1 = A(b=1, other='p') % B(b=1)
     cp2 = A()
@@ -62,10 +69,11 @@ def test_cp_embedding():
     #assert not _cp_embeds_into(cp5, cp3)
     assert not _cp_embeds_into(cp5, cp4)
 
+
 @with_model
 def test__match_lhs():
-    Monomer('A', ['other'], {'other':['u', 'p']})
-    Monomer('B', ['T185'], {'T185':['u', 'p']})
+    Monomer('A', ['other'], {'other': ['u', 'p']})
+    Monomer('B', ['T185'], {'T185': ['u', 'p']})
     rule = Rule('A_phos_B', A() + B(T185='u') >> A() + B(T185='p'),
                 Parameter('k', 1))
     matching_rules = _match_lhs(A(), model.rules)
@@ -73,6 +81,7 @@ def test__match_lhs():
     assert matching_rules[0] == rule
     matching_rules = _match_lhs(A(other='u'), model.rules)
     assert len(matching_rules) == 0
+
 
 """
 @with_model
@@ -91,15 +100,16 @@ def test_match_rhs():
     assert matching_rules[0] == rule
 """
 
+
 @with_model
 def test_one_step_phosphorylation():
     # Create the statement
-    a = Agent('A', db_refs={'HGNC':'1'})
-    b = Agent('B', db_refs={'HGNC':'2'})
+    a = Agent('A', db_refs={'HGNC': '1'})
+    b = Agent('B', db_refs={'HGNC': '2'})
     st = Phosphorylation(a, b, 'T', '185')
     # Now create the PySB model
     Monomer('A')
-    Monomer('B', ['T185'], {'T185':['u', 'p']})
+    Monomer('B', ['T185'], {'T185': ['u', 'p']})
     Rule('A_phos_B', A() + B(T185='u') >> A() + B(T185='p'),
          Parameter('k', 1))
     Initial(A(), Parameter('A_0', 100))
@@ -121,17 +131,18 @@ def test_one_step_phosphorylation():
     assert results[0][0] == st
     pr = results[0][1]
     assert isinstance(pr, PathResult)
-    assert pr.paths == [[('A_phos_B', 1), ('B_T185_p_obs', 1)]]
+    assert pr.paths == [(('A_phos_B', 1), ('B_T185_p_obs', 1))]
+
 
 @with_model
 def test_two_step_phosphorylation():
     # Create the statement
-    a = Agent('A', db_refs={'HGNC':'1'})
-    b = Agent('B', db_refs={'HGNC':'2'})
+    a = Agent('A', db_refs={'HGNC': '1'})
+    b = Agent('B', db_refs={'HGNC': '2'})
     st = Phosphorylation(a, b, 'T', '185')
     # Now create the PySB model
-    Monomer('A', ['b', 'other'], {'other':['u','p']})
-    Monomer('B', ['b', 'T185'], {'T185':['u', 'p']})
+    Monomer('A', ['b', 'other'], {'other': ['u','p']})
+    Monomer('B', ['b', 'T185'], {'T185': ['u', 'p']})
     Rule('A_bind_B', A(b=None) + B(b=None, T185='u') >>
                      A(b=1) % B(b=1, T185='u'), Parameter('kf', 1))
     Rule('A_bind_B_rev', A(b=1) % B(b=1, T185='u') >>
@@ -164,7 +175,7 @@ def test_two_step_phosphorylation():
     assert isinstance(results[0], tuple)
     assert results[0][0] == st
     pr = results[0][1]
-    assert pr.paths == [[('A_phos_B', 1), ('B_T185_p_obs', 1)]]
+    assert pr.paths == [(('A_phos_B', 1), ('B_T185_p_obs', 1))]
 
 
 def test_pysb_assembler_phospho_policies():
@@ -181,7 +192,7 @@ def test_pysb_assembler_phospho_policies():
     assert isinstance(results[0], tuple)
     assert results[0][0] == st
     pr = results[0][1]
-    assert pr.paths == [[('A_phosphorylation_B_T185', 1), ('B_T185_p_obs', 1)]]
+    assert pr.paths == [(('A_phosphorylation_B_T185', 1), ('B_T185_p_obs', 1))]
     # Try one step
     pa.make_model(policies='one_step')
     mc = ModelChecker(pa.model, [st])
@@ -191,8 +202,7 @@ def test_pysb_assembler_phospho_policies():
     assert results[0][0] == st
     pr = results[0][1]
     assert pr.path_found
-    assert pr.paths == [[('A_phosphorylation_B_T185', 1),
-                         ('B_T185_p_obs', 1)]]
+    assert pr.paths == [(('A_phosphorylation_B_T185', 1), ('B_T185_p_obs', 1))]
     # Try interactions_only
     pa.make_model(policies='interactions_only')
     mc = ModelChecker(pa.model, [st])
@@ -202,6 +212,7 @@ def test_pysb_assembler_phospho_policies():
     assert results[0][0] == st
     pr = results[0][1]
     assert not pr.path_found
+
 
 """
 def test_ras_220_network():
@@ -269,6 +280,7 @@ def test_path_polarity():
     assert not _positive_path(im, path2)
 """
 
+
 @with_model
 def test_consumption_rule():
     pvd = Agent('Pervanadate', db_refs={'HGNC': '1'})
@@ -322,16 +334,17 @@ def test_consumption_rule():
     assert isinstance(checks[0], tuple)
     assert checks[0][0] == stmt
     pr = checks[0][1]
-    assert pr.paths == [[('Pvd_binds_DUSP', 1),
+    assert pr.paths == [(('Pvd_binds_DUSP', 1),
                          ('DUSP_binds_MAPK1_phosT185', -1),
                          ('DUSP_dephos_MAPK1_at_T185', -1),
-                         ('MAPK1_T185_p_obs', 1)]]
+                         ('MAPK1_T185_p_obs', 1))]
 
 
 def test_dephosphorylation():
     dusp = Agent('DUSP6', db_refs={'HGNC':'1'})
     mapk1 = Agent('MAPK1', db_refs={'HGNC':'2'})
     stmt = Dephosphorylation(dusp, mapk1, 'T', '185')
+
     def check_policy(policy, result):
         pysba = PysbAssembler()
         pysba.add_statements([stmt])
@@ -344,37 +357,38 @@ def test_dephosphorylation():
         pr = checks[0][1]
         assert pr.paths == result
 
-    check_policy('one_step', [[('DUSP6_dephosphorylation_MAPK1_T185', 1),
-                                      ('MAPK1_T185_p_obs', -1)]])
-    check_policy('two_step', [[('DUSP6_dephosphorylation_MAPK1_T185', 1),
-                                      ('MAPK1_T185_p_obs', -1)]])
+    check_policy('one_step', [(('DUSP6_dephosphorylation_MAPK1_T185', 1),
+                               ('MAPK1_T185_p_obs', -1))])
+    check_policy('two_step', [(('DUSP6_dephosphorylation_MAPK1_T185', 1),
+                               ('MAPK1_T185_p_obs', -1))])
     check_policy('interactions_only', [])
+
 
 @with_model
 def test_invalid_modification():
-     # Override the shutoff of self export in psyb_assembler
-     # Create the statement
-     a = Agent('A')
-     b = Agent('B')
-     st = Phosphorylation(a, b, 'T', '185')
-     # Now create the PySB model
-     Monomer('A')
-     Monomer('B', ['Y187'], {'Y187':['u', 'p']})
-     Rule('A_phos_B', A() + B(Y187='u') >> A() + B(Y187='p'),
-          Parameter('k', 1))
-     #Initial(A(), Parameter('A_0', 100))
-     #Initial(B(T187='u'), Parameter('B_0', 100))
-     #with open('model_rxn.dot', 'w') as f:
-     #    f.write(render_reactions.run(model))
-     #with open('species_1step.dot', 'w') as f:
-     #    f.write(species_graph.run(model))
-     # Now check the model
-     mc = ModelChecker(model, [st])
-     results = mc.check_model()
-     assert len(results) == 1
-     #assert isinstance(results[0], tuple)
-     #assert results[0][0] == st
-     #assert results[0][1] == True
+    # Override the shutoff of self export in psyb_assembler
+    # Create the statement
+    a = Agent('A')
+    b = Agent('B')
+    st = Phosphorylation(a, b, 'T', '185')
+    # Now create the PySB model
+    Monomer('A')
+    Monomer('B', ['Y187'], {'Y187':['u', 'p']})
+    Rule('A_phos_B', A() + B(Y187='u') >> A() + B(Y187='p'),
+         Parameter('k', 1))
+    #Initial(A(), Parameter('A_0', 100))
+    #Initial(B(T187='u'), Parameter('B_0', 100))
+    #with open('model_rxn.dot', 'w') as f:
+    #    f.write(render_reactions.run(model))
+    #with open('species_1step.dot', 'w') as f:
+    #    f.write(species_graph.run(model))
+    # Now check the model
+    mc = ModelChecker(model, [st])
+    results = mc.check_model()
+    assert len(results) == 1
+    #assert isinstance(results[0], tuple)
+    #assert results[0][0] == st
+    #assert results[0][1] == True
 
 
 def _path_polarity_stmt_list():
@@ -388,12 +402,13 @@ def _path_polarity_stmt_list():
 
     return [st1, st2, st3, st4]
 
+
 @with_model
 def test_distinguish_path_polarity1():
     """Test the ability to distinguish a positive from a negative regulation."""
     Monomer('A')
-    Monomer('B', ['act'], {'act' :['y', 'n']})
-    Monomer('C', ['T185'], {'T185':['u', 'p']})
+    Monomer('B', ['act'], {'act' : ['y', 'n']})
+    Monomer('C', ['T185'], {'T185': ['u', 'p']})
     Parameter('k', 1)
     Rule('A_activate_B', A() + B(act='n') >> A() + B(act='y'), k)
     Rule('B_dephos_C', B(act='y') + C(T185='p') >>
@@ -417,21 +432,22 @@ def test_distinguish_path_polarity1():
     stmts = _path_polarity_stmt_list()
     mc = ModelChecker(model, stmts)
     results = mc.check_model()
-    assert len(results) ==  len(stmts)
+    assert len(results) == len(stmts)
     assert isinstance(results[0], tuple)
     path_results = [res[1] for res in results]
     assert path_results[0].paths == []
-    assert path_results[1].paths == [[('A_activate_B', 1), ('B_dephos_C', 1),
-                                      ('C_T185_p_obs', -1)]]
+    assert path_results[1].paths == [(('A_activate_B', 1), ('B_dephos_C', 1),
+                                      ('C_T185_p_obs', -1))]
     assert path_results[2].paths == []
-    assert path_results[3].paths == [[('B_dephos_C', 1), ('C_T185_p_obs', -1)]]
+    assert path_results[3].paths == [(('B_dephos_C', 1), ('C_T185_p_obs', -1))]
+
 
 @with_model
 def test_distinguish_path_polarity2():
     """Test the ability to distinguish a positive from a negative regulation."""
     Monomer('A')
-    Monomer('B', ['act'], {'act' :['y', 'n']})
-    Monomer('C', ['T185'], {'T185':['u', 'p']})
+    Monomer('B', ['act'], {'act' : ['y', 'n']})
+    Monomer('C', ['T185'], {'T185': ['u', 'p']})
     Parameter('k', 1)
     Rule('A_inhibit_B', A() + B(act='y') >> A() + B(act='n'), k)
     Rule('B_dephos_C', B(act='y') + C(T185='p') >>
@@ -455,14 +471,14 @@ def test_distinguish_path_polarity2():
     stmts = _path_polarity_stmt_list()
     mc = ModelChecker(model, stmts)
     results = mc.check_model()
-    assert len(results) ==  len(stmts)
+    assert len(results) == len(stmts)
     assert isinstance(results[0], tuple)
-    assert results[0][1].paths == [[('A_inhibit_B', 1), ('B_dephos_C', -1),
-                                    ('C_T185_p_obs', 1)]]
+    assert results[0][1].paths == [(('A_inhibit_B', 1), ('B_dephos_C', -1),
+                                    ('C_T185_p_obs', 1))]
     assert results[1][1].paths == []
-    assert results[2][1].paths == [[('A_inhibit_B', 1), ('B_dephos_C', -1),
-                                    ('C_T185_p_obs', 1)]]
-    assert results[3][1].paths == [[('B_dephos_C', 1), ('C_T185_p_obs', -1)]]
+    assert results[2][1].paths == [(('A_inhibit_B', 1), ('B_dephos_C', -1),
+                                    ('C_T185_p_obs', 1))]
+    assert results[3][1].paths == [(('B_dephos_C', 1), ('C_T185_p_obs', -1))]
 
 
 def test_check_activation():
@@ -478,18 +494,18 @@ def test_check_activation():
     pa.make_model(policies='one_step')
     mc = ModelChecker(pa.model, stmts)
     results = mc.check_model()
-    assert len(results) ==  len(stmts)
+    assert len(results) == len(stmts)
     assert isinstance(results[0], tuple)
-    assert results[0][1].paths == [[('A_activates_B_activity', 1),
-                                    ('B_activity_active_obs', 1)]]
-    assert results[1][1].paths == [[('B_deactivates_C_kinase', 1),
-                                    ('C_kinase_active_obs', -1)]]
+    assert results[0][1].paths == [(('A_activates_B_activity', 1),
+                                    ('B_activity_active_obs', 1))]
+    assert results[1][1].paths == [(('B_deactivates_C_kinase', 1),
+                                    ('C_kinase_active_obs', -1))]
 
 
 @with_model
 def test_none_phosphorylation_stmt():
     # Create the statement
-    b = Agent('B', db_refs={'HGNC':'2'})
+    b = Agent('B', db_refs={'HGNC': '2'})
     st1 = Phosphorylation(None, b, 'T', '185')
     st2 = Phosphorylation(None, b, 'Y', '187')
     stmts = [st1, st2]
@@ -515,9 +531,10 @@ def test_none_phosphorylation_stmt():
     assert len(results) == 2
     assert isinstance(results[0], tuple)
     assert results[0][0] == st1
-    assert results[0][1].paths == [[('A_phos_B', 1), ('B_T185_p_obs', 1)]]
+    assert results[0][1].paths == [(('A_phos_B', 1), ('B_T185_p_obs', 1))]
     assert results[1][0] == st2
     assert results[1][1].paths == []
+
 
 @with_model
 def test_phosphorylation_annotations():
@@ -530,7 +547,7 @@ def test_phosphorylation_annotations():
     # Now create the PySB model
     Monomer('A_monomer')
     Monomer('B_monomer', ['Thr185', 'Y187'],
-            {'Thr185':['un', 'phos'], 'Y187': ['u', 'p']})
+            {'Thr185': ['un', 'phos'], 'Y187': ['u', 'p']})
     Rule('A_phos_B', A_monomer() + B_monomer(Thr185='un') >>
                      A_monomer() + B_monomer(Thr185='phos'),
          Parameter('k', 1))
@@ -556,11 +573,11 @@ def test_phosphorylation_annotations():
     assert len(results) == 3
     assert isinstance(results[0], tuple)
     assert results[0][0] == st1
-    assert results[0][1].paths == [[('A_phos_B', 1),
-                              ('B_monomer_Thr185_phos_obs', 1)]]
+    assert results[0][1].paths == [(('A_phos_B', 1),
+                                    ('B_monomer_Thr185_phos_obs', 1))]
     assert results[1][0] == st2
-    assert results[1][1].paths == [[('A_phos_B', 1),
-                              ('B_monomer_Thr185_phos_obs', 1)]]
+    assert results[1][1].paths == [(('A_phos_B', 1),
+                                    ('B_monomer_Thr185_phos_obs', 1))]
     assert results[2][0] == st3
     assert results[2][1].paths == []
 
@@ -576,7 +593,7 @@ def test_activation_annotations():
     # Now create the PySB model
     Monomer('A_monomer')
     Monomer('B_monomer', ['Thr185', 'Y187'],
-            {'Thr185':['un', 'phos'], 'Y187': ['u', 'p']})
+            {'Thr185': ['un', 'phos'], 'Y187': ['u', 'p']})
     Rule('A_phos_B', A_monomer() + B_monomer(Thr185='un') >>
                      A_monomer() + B_monomer(Thr185='phos'),
          Parameter('k', 1))
@@ -603,29 +620,29 @@ def test_activation_annotations():
     assert len(results) == 3
     assert isinstance(results[0], tuple)
     assert results[0][0] == st1
-    assert results[0][1].paths == [[('A_phos_B', 1),
-                                    ('B_monomer_Thr185_phos_obs', 1)]]
+    assert results[0][1].paths == [(('A_phos_B', 1),
+                                    ('B_monomer_Thr185_phos_obs', 1))]
     assert results[1][0] == st2
-    assert results[1][1].paths == [[('A_phos_B', 1),
-                                    ('B_monomer_Thr185_phos_obs', 1)]]
+    assert results[1][1].paths == [(('A_phos_B', 1),
+                                    ('B_monomer_Thr185_phos_obs', 1))]
     assert results[2][0] == st3
-    assert results[1][1].paths == [[('A_phos_B', 1),
-                                    ('B_monomer_Thr185_phos_obs', 1)]]
+    assert results[1][1].paths == [(('A_phos_B', 1),
+                                    ('B_monomer_Thr185_phos_obs', 1))]
 
 
 def test_multitype_path():
     """Test causal chain involving Complex, Gef, Activation"""
-    egfr = Agent('EGFR', db_refs={'HGNC':'3236'})
+    egfr = Agent('EGFR', db_refs={'HGNC': '3236'})
     grb2 = Agent('GRB2', db_refs={'HGNC': '4566'})
     grb2_egfr = Agent('GRB2', bound_conditions=[BoundCondition(egfr)],
                       db_refs={'HGNC': '4566'})
-    sos1 = Agent('SOS1', db_refs={'HGNC':'11187'}, )
+    sos1 = Agent('SOS1', db_refs={'HGNC': '11187'}, )
     sos1_grb2 = Agent('SOS1', bound_conditions=[BoundCondition(grb2)],
-                 db_refs={'HGNC':'11187'}, )
-    kras = Agent('KRAS', db_refs={'HGNC':'6407'})
+                      db_refs={'HGNC': '11187'}, )
+    kras = Agent('KRAS', db_refs={'HGNC': '6407'})
     kras_g = Agent('KRAS', activity=ActivityCondition('gtpbound', True),
                    db_refs={'HGNC': '6407'})
-    braf = Agent('BRAF', db_refs={'HGNC':'1097'})
+    braf = Agent('BRAF', db_refs={'HGNC': '1097'})
 
     def check_stmts(stmts, paths):
         pa = PysbAssembler()
@@ -649,13 +666,13 @@ def test_multitype_path():
         Activation(sos1_grb2, kras, 'gtpbound'),
         Activation(kras_g, braf, 'kinase')
       ]
-    check_stmts(stmts1, ([[('EGFR_GRB2_bind', 1), ('SOS1_GRB2_EGFR_bind', 1),
-                          ('SOS1_GRB2_activates_KRAS_gtpbound', 1),
-                          ('KRAS_gtpbound_active_obs', 1)]],
-                         [[('EGFR_GRB2_bind', 1), ('SOS1_GRB2_EGFR_bind', 1),
+    check_stmts(stmts1, ([(('EGFR_GRB2_bind', 1), ('SOS1_GRB2_EGFR_bind', 1),
+                           ('SOS1_GRB2_activates_KRAS_gtpbound', 1),
+                           ('KRAS_gtpbound_active_obs', 1))],
+                         [(('EGFR_GRB2_bind', 1), ('SOS1_GRB2_EGFR_bind', 1),
                            ('SOS1_GRB2_activates_KRAS_gtpbound', 1),
                            ('KRAS_activates_BRAF_kinase', 1),
-                           ('BRAF_kinase_active_obs', 1)]]))
+                           ('BRAF_kinase_active_obs', 1))]))
     # Check without the ActiveForm
     stmts2 = [
         Complex([egfr, grb2]),
@@ -663,13 +680,13 @@ def test_multitype_path():
         Gef(sos1_grb2, kras),
         Activation(kras_g, braf, 'kinase')
       ]
-    check_stmts(stmts2, ([[('EGFR_GRB2_bind', 1), ('SOS1_GRB2_EGFR_bind', 1),
+    check_stmts(stmts2, ([(('EGFR_GRB2_bind', 1), ('SOS1_GRB2_EGFR_bind', 1),
                            ('SOS1_GRB2_activates_KRAS', 1),
-                           ('KRAS_gtpbound_active_obs', 1)]],
-                         [[('EGFR_GRB2_bind', 1), ('SOS1_GRB2_EGFR_bind', 1),
+                           ('KRAS_gtpbound_active_obs', 1))],
+                         [(('EGFR_GRB2_bind', 1), ('SOS1_GRB2_EGFR_bind', 1),
                            ('SOS1_GRB2_activates_KRAS', 1),
                            ('KRAS_activates_BRAF_kinase', 1),
-                           ('BRAF_kinase_active_obs', 1)]]))
+                           ('BRAF_kinase_active_obs', 1))]))
 
 
 def test_grounded_modified_enzyme():
@@ -690,8 +707,8 @@ def test_grounded_modified_enzyme():
     assert len(results) == 1
     assert results[0][0] == stmt_to_check
     assert results[0][1].paths == \
-                    [[('MEK1_phosphoS202_phosphorylation_ERK2_phospho', 1),
-                      ('ERK2_phospho_p_obs', 1)]]
+        [(('MEK1_phosphoS202_phosphorylation_ERK2_phospho', 1),
+          ('ERK2_phospho_p_obs', 1))]
 
 
 def test_check_ubiquitination():
@@ -706,8 +723,8 @@ def test_check_ubiquitination():
     assert len(checks) == 1
     assert isinstance(checks[0], tuple)
     assert checks[0][0] == stmt
-    assert checks[0][1].paths == [[('XIAP_ubiquitination_CASP3_ub', 1),
-                             ('CASP3_ub_y_obs', 1)]]
+    assert checks[0][1].paths == [(('XIAP_ubiquitination_CASP3_ub', 1),
+                                   ('CASP3_ub_y_obs', 1))]
 
 
 def test_check_rule_subject1():
@@ -727,8 +744,8 @@ def test_check_rule_subject1():
 
 
 def test_gef_activation():
-    sos = Agent('SOS1', db_refs={'HGNC':'1'})
-    ras = Agent('KRAS', db_refs={'HGNC':'2'})
+    sos = Agent('SOS1', db_refs={'HGNC': '1'})
+    ras = Agent('KRAS', db_refs={'HGNC': '2'})
     gef_stmt = Gef(sos, ras)
     act_stmt = Activation(sos, ras, 'gtpbound')
     # Check that the activation is satisfied by the Gef
@@ -739,8 +756,8 @@ def test_gef_activation():
     checks = mc.check_model()
     assert len(checks) == 1
     assert checks[0][0] == act_stmt
-    assert checks[0][1].paths == [[('SOS1_activates_KRAS', 1),
-                             ('KRAS_gtpbound_active_obs', 1)]]
+    assert checks[0][1].paths == [(('SOS1_activates_KRAS', 1),
+                                   ('KRAS_gtpbound_active_obs', 1))]
     # TODO TODO TODO
     """
     # Check that the Gef is satisfied by the Activation
@@ -757,10 +774,10 @@ def test_gef_activation():
 
 
 def test_gef_rasgtp():
-    sos = Agent('SOS1', db_refs={'HGNC':'1'})
+    sos = Agent('SOS1', db_refs={'HGNC': '1'})
     ras = Agent('KRAS', activity=ActivityCondition('gtpbound', True),
-                db_refs={'HGNC':'2'})
-    raf = Agent('BRAF', db_refs={'HGNC':'3'})
+                db_refs={'HGNC': '2'})
+    raf = Agent('BRAF', db_refs={'HGNC': '3'})
     gef_stmt = Gef(sos, ras)
     rasgtp_stmt = GtpActivation(ras, raf, 'kinase')
     act_stmt = Activation(sos, raf, 'kinase')
@@ -772,19 +789,19 @@ def test_gef_rasgtp():
     checks = mc.check_model()
     assert len(checks) == 1
     assert checks[0][0] == act_stmt
-    assert checks[0][1].paths == [[('SOS1_activates_KRAS', 1),
+    assert checks[0][1].paths == [(('SOS1_activates_KRAS', 1),
                                    ('KRAS_activates_BRAF_kinase', 1),
-                                   ('BRAF_kinase_active_obs', 1)]]
+                                   ('BRAF_kinase_active_obs', 1))]
 
 
 def test_gef_rasgtp_phos():
-    sos = Agent('SOS1', db_refs={'HGNC':'1'})
-    ras = Agent('KRAS', db_refs={'HGNC':'2'})
+    sos = Agent('SOS1', db_refs={'HGNC': '1'})
+    ras = Agent('KRAS', db_refs={'HGNC': '2'})
     ras_a = Agent('KRAS', activity=ActivityCondition('gtpbound', True),
-                  db_refs={'HGNC':'2'})
-    raf = Agent('BRAF', db_refs={'HGNC':'3'})
+                  db_refs={'HGNC': '2'})
+    raf = Agent('BRAF', db_refs={'HGNC': '3'})
     raf_a = Agent('BRAF', activity=ActivityCondition('kinase', True),
-                  db_refs={'HGNC':'3'})
+                  db_refs={'HGNC': '3'})
     mek = Agent('MEK', db_refs={'HGNC': '4'})
     gef_stmt = Gef(sos, ras)
     rasgtp_stmt = GtpActivation(ras_a, raf, 'kinase')
@@ -798,15 +815,15 @@ def test_gef_rasgtp_phos():
     checks = mc.check_model()
     assert len(checks) == 1
     assert checks[0][0] == stmt_to_check
-    assert checks[0][1].paths == [[('SOS1_activates_KRAS', 1),
+    assert checks[0][1].paths == [(('SOS1_activates_KRAS', 1),
                                    ('KRAS_activates_BRAF_kinase', 1),
                                    ('BRAF_phosphorylation_MEK_phospho', 1),
-                                   ('MEK_phospho_p_obs', 1)]]
+                                   ('MEK_phospho_p_obs', 1))]
 
 
 def test_gap_activation():
-    nf1 = Agent('NF1', db_refs={'HGNC':'1'})
-    ras = Agent('KRAS', db_refs={'HGNC':'2'})
+    nf1 = Agent('NF1', db_refs={'HGNC': '1'})
+    ras = Agent('KRAS', db_refs={'HGNC': '2'})
     gap_stmt = Gap(nf1, ras)
     act_stmt = Inhibition(nf1, ras, 'gtpbound')
     # Check that the activation is satisfied by the Gap
@@ -817,8 +834,8 @@ def test_gap_activation():
     checks = mc.check_model()
     assert len(checks) == 1
     assert checks[0][0] == act_stmt
-    assert checks[0][1].paths == [[('NF1_deactivates_KRAS', 1),
-                                   ('KRAS_gtpbound_active_obs', -1)]]
+    assert checks[0][1].paths == [(('NF1_deactivates_KRAS', 1),
+                                   ('KRAS_gtpbound_active_obs', -1))]
     # TODO TODO TODO
     """
     # Check that the Gap is satisfied by the Activation
@@ -836,11 +853,11 @@ def test_gap_activation():
 
 
 def test_gap_rasgtp():
-    nf1 = Agent('NF1', db_refs={'HGNC':'1'})
-    ras = Agent('KRAS', db_refs={'HGNC':'2'})
+    nf1 = Agent('NF1', db_refs={'HGNC': '1'})
+    ras = Agent('KRAS', db_refs={'HGNC': '2'})
     ras_g = Agent('KRAS', activity=ActivityCondition('gtpbound', True),
-                 db_refs={'HGNC': '2'})
-    raf = Agent('BRAF', db_refs={'HGNC':'3'})
+                  db_refs={'HGNC': '2'})
+    raf = Agent('BRAF', db_refs={'HGNC': '3'})
     gap_stmt = Gap(nf1, ras)
     rasgtp_stmt = GtpActivation(ras_g, raf, 'kinase')
     act_stmt = Inhibition(nf1, raf, 'kinase')
@@ -852,18 +869,18 @@ def test_gap_rasgtp():
     checks = mc.check_model()
     assert len(checks) == 1
     assert checks[0][0] == act_stmt
-    assert checks[0][1].paths == [[('NF1_deactivates_KRAS', 1),
+    assert checks[0][1].paths == [(('NF1_deactivates_KRAS', 1),
                                    ('KRAS_activates_BRAF_kinase', -1),
-                                   ('BRAF_kinase_active_obs', -1)]]
+                                   ('BRAF_kinase_active_obs', -1))]
 
 
 def test_gap_rasgtp_phos():
-    nf1 = Agent('NF1', db_refs={'HGNC':'1'})
-    ras = Agent('KRAS', db_refs={'HGNC':'2'})
+    nf1 = Agent('NF1', db_refs={'HGNC': '1'})
+    ras = Agent('KRAS', db_refs={'HGNC': '2'})
     ras_g = Agent('KRAS', activity=ActivityCondition('gtpbound', True),
                   db_refs={'HGNC': '2'})
     raf = Agent('BRAF', activity=ActivityCondition('kinase', True),
-                db_refs={'HGNC':'3'})
+                db_refs={'HGNC': '3'})
     mek = Agent('MEK', db_refs={'HGNC': '4'})
     gap_stmt = Gap(nf1, ras)
     rasgtp_stmt = GtpActivation(ras_g, raf, 'kinase')
@@ -877,10 +894,10 @@ def test_gap_rasgtp_phos():
     checks = mc.check_model()
     assert len(checks) == 1
     assert checks[0][0] == stmt_to_check
-    assert checks[0][1].paths == [[('NF1_deactivates_KRAS', 1),
+    assert checks[0][1].paths == [(('NF1_deactivates_KRAS', 1),
                                    ('KRAS_activates_BRAF_kinase', -1),
                                    ('BRAF_phosphorylation_MEK_phospho', -1),
-                                   ('MEK_phospho_p_obs', -1)]]
+                                   ('MEK_phospho_p_obs', -1))]
 
 
 def test_increase_amount():
@@ -896,9 +913,9 @@ def test_increase_amount():
     checks = mc.check_model()
     assert len(checks) == 1
     assert checks[0][0] == stmt_to_check
-    assert checks[0][1].paths == [[('TP53_synthesizes_X', 1),
+    assert checks[0][1].paths == [(('TP53_synthesizes_X', 1),
                                    ('X_synthesizes_MDM2', 1),
-                                   ('MDM2__obs', 1)]]
+                                   ('MDM2__obs', 1))]
 
 
 def test_decrease_amount():
@@ -916,10 +933,10 @@ def test_decrease_amount():
     checks = mc.check_model()
     assert len(checks) == 1
     assert checks[0][0] == stmt_to_check
-    assert checks[0][1].paths == [[('TP53_synthesizes_MDM2', 1),
+    assert checks[0][1].paths == [(('TP53_synthesizes_MDM2', 1),
                                    ('MDM2_ubiquitination_TP53_ub', 1),
                                    ('TP53_ub_degraded', 1),
-                                   ('TP53__obs', -1)]]
+                                   ('TP53__obs', -1))]
 
 
 def test_stmt_from_rule():
@@ -930,14 +947,14 @@ def test_stmt_from_rule():
     pa.add_statements([st])
     pa.make_model()
     rule_name = pa.model.rules[0].name
-    stmt = _stmt_from_rule(pa.model, rule_name, [st])
+    stmt = stmt_from_rule(rule_name, pa.model, [st])
     assert(stmt == st)
 
 
 def test_activate_via_mod():
     mek = Agent('MEK1', db_refs={'HGNC': '6840'})
     erk = Agent('ERK2', db_refs={'HGNC': '6871'})
-    erka = Agent('ERK2', mods=[ModCondition('phosphorylation', 'T', '185')], 
+    erka = Agent('ERK2', mods=[ModCondition('phosphorylation', 'T', '185')],
                  db_refs={'HGNC': '6871'})
     st1 = Phosphorylation(mek, erk, 'T', '185')
     st2 = ActiveForm(erka, 'activity', True)
@@ -954,7 +971,7 @@ def test_activate_via_mod():
 def test_observables():
     mek = Agent('MEK1', db_refs={'HGNC': '6840'})
     erk = Agent('ERK2', db_refs={'HGNC': '6871'})
-    erkp = Agent('ERK2', mods=[ModCondition('phosphorylation', 'T', '185')], 
+    erkp = Agent('ERK2', mods=[ModCondition('phosphorylation', 'T', '185')],
                  db_refs={'HGNC': '6871'})
     st1 = Phosphorylation(mek, erk, 'T', '185')
     st2 = ActiveForm(erkp, 'activity', True)
@@ -968,6 +985,7 @@ def test_observables():
     assert checks[1][1].path_found
     # Only 1 observable should be created
     assert len(mc.model.observables) == 1
+
 
 """
 def test_check_rule_subject_bound_condition():
@@ -1064,19 +1082,18 @@ def test_model_check_data():
     pa.make_model(policies='one_step')
     mc = ModelChecker(pa.model, [stmt_to_check], agent_obs)
     results = mc.check_model(max_paths=5)
-    mc.get_im().draw('im.pdf', prog='dot')
     # Create observable
     assert len(results) == 1
     pr = results[0][1]
     res = pr.paths[0:2]
     assert len(res) == 2
-    p1 = [('A_phosphorylation_B_phospho', 1),
+    p1 = (('A_phosphorylation_B_phospho', 1),
           ('B_phospho_phosphorylation_D_phospho', 1),
-          ('D_phospho_p_obs', 1)]
+          ('D_phospho_p_obs', 1))
     assert p1 in res
-    p2 = [('A_phosphorylation_C_phospho', 1),
+    p2 = (('A_phosphorylation_C_phospho', 1),
           ('C_phospho_phosphorylation_D_phospho', 1),
-          ('D_phospho_p_obs', 1)]
+          ('D_phospho_p_obs', 1))
     assert p2 in res
     # Now, a vector linking agents with values, expressed at first as
     # +/- 1
@@ -1102,13 +1119,182 @@ def test_prune_influence_map():
     mc = ModelChecker(pa.model, [st1])
     im = mc.get_im()
     remove_im_params(pa.model, im)
-    #im.draw('before_pruning.pdf', prog='dot')
     mc.prune_influence_map()
     im = mc.get_im()
-    #im.draw('after_pruning.pdf', prog='dot')
     assert len(im.nodes()) == 3
     assert len(im.edges()) == 2
 
+
+def test_weighted_sampling1():
+    """Test sampling with different path lengths but no data."""
+    os.environ['TEST_FLAG'] = 'TRUE'
+    mc = ModCondition('phosphorylation')
+    braf = Agent('BRAF', db_refs={'HGNC': '1097'})
+    map2k1 = Agent('MAP2K1', db_refs={'HGNC': '6840'})
+    map2k1_phos = Agent('MAP2K1', mods=[mc], db_refs={'HGNC': '6840'})
+    mapk1 = Agent('MAPK1', db_refs={'HGNC': '6871'})
+    mapk1_phos = Agent('MAPK1', mods=[mc], db_refs={'HGNC': '6871'})
+    jun = Agent('JUN', db_refs={'HGNC': '6204'})
+    stmt_to_check = Phosphorylation(braf, jun)
+    stmts = [stmt_to_check,
+             Phosphorylation(braf, map2k1),
+             Phosphorylation(map2k1_phos, jun),
+             Phosphorylation(map2k1_phos, mapk1),
+             Phosphorylation(mapk1_phos, jun)]
+    # Make model
+    pa = PysbAssembler()
+    pa.add_statements(stmts)
+    pa.make_model(policies='one_step')
+    # Make the model checker and prune the influence map
+    mc = ModelChecker(pa.model, [stmt_to_check], do_sampling=True, seed=1)
+    mc.prune_influence_map()
+    # Seed the random number generator
+    np.random.seed(1)
+    results = mc.check_model(max_path_length=5, max_paths=100)
+    assert type(results) == list
+    assert len(results) == 1
+    stmt_tuple = results[0]
+    assert len(stmt_tuple) == 2
+    assert stmt_tuple[0] == stmt_to_check
+    path_result = stmt_tuple[1]
+    assert type(path_result) == PathResult
+    path_lengths = [len(p) for p in path_result.paths]
+    assert max(path_lengths) <= 5
+    # There are two distinct paths
+    assert len(set(path_result.paths)) == 3
+    path_ctr = Counter(path_result.paths)
+    assert path_ctr[(('BRAF_phosphorylation_JUN_phospho', 1),
+                     ('JUN_phospho_p_obs', 1))] == 46, path_ctr
+    assert path_ctr[(('BRAF_phosphorylation_MAP2K1_phospho', 1),
+                     ('MAP2K1_phospho_phosphorylation_JUN_phospho', 1),
+                     ('JUN_phospho_p_obs', 1))] == 22, path_ctr
+    assert path_ctr[(('BRAF_phosphorylation_MAP2K1_phospho', 1),
+                     ('MAP2K1_phospho_phosphorylation_MAPK1_phospho', 1),
+                     ('MAPK1_phospho_phosphorylation_JUN_phospho', 1),
+                     ('JUN_phospho_p_obs', 1))] == 32, path_ctr
+
+
+def test_weighted_sampling2():
+    """Test sampling with abundances but no tail probabilities from data."""
+    os.environ['TEST_FLAG'] = 'TRUE'
+    map2k1 = Agent('MAP2K1', db_refs={'HGNC': '6840'})
+    mapk1 = Agent('MAPK1', db_refs={'HGNC': '6871'})
+    mapk3 = Agent('MAPK3', db_refs={'HGNC': '6877'})
+    mc = ModCondition('phosphorylation')
+    mapk1_phos = Agent('MAPK1', mods=[mc], db_refs={'HGNC': '6871'})
+    mapk3_phos = Agent('MAPK3', mods=[mc], db_refs={'HGNC': '6877'})
+    jun = Agent('JUN', db_refs={'HGNC': '6204'})
+    st1 = Phosphorylation(map2k1, mapk1)
+    st2 = Phosphorylation(map2k1, mapk3)
+    st3 = Phosphorylation(mapk1_phos, jun)
+    st4 = Phosphorylation(mapk3_phos, jun)
+    stmt_to_check = Phosphorylation(map2k1, jun)
+    # Make model
+    pa = PysbAssembler()
+    pa.add_statements([st1, st2, st3, st4])
+    pa.make_model(policies='one_step')
+    # Set the initial conditions
+    mapk1_monomer = pa.model.all_components()['MAPK1']
+    mapk3_monomer = pa.model.all_components()['MAPK3']
+    set_base_initial_condition(pa.model, mapk1_monomer, 75)
+    set_base_initial_condition(pa.model, mapk3_monomer, 25)
+    # Make the model checker and prune the influence map
+    # Setting do_sampling to False should yield the default enumeration
+    # behavior
+    mc = ModelChecker(pa.model, [stmt_to_check], do_sampling=False)
+    mc.prune_influence_map()
+    results = mc.check_model(max_paths=5)
+    path_result = results[0][1]
+    assert len(path_result.paths) == 2
+    enum_paths = path_result.paths
+    # Now, try sampling
+    mc = ModelChecker(pa.model, [stmt_to_check], do_sampling=True, seed=1)
+    mc.prune_influence_map()
+    results = mc.check_model(max_path_length=5, max_paths=1000)
+    assert type(results) == list
+    assert len(results) == 1
+    stmt_tuple = results[0]
+    assert len(stmt_tuple) == 2
+    assert stmt_tuple[0] == stmt_to_check
+    path_result = stmt_tuple[1]
+    assert type(path_result) == PathResult
+    path_lengths = [len(p) for p in path_result.paths]
+    assert max(path_lengths) <= 5
+    # There are two distinct paths
+    assert set(enum_paths) == set(path_result.paths)
+    path_ctr = Counter(path_result.paths)
+    mapk1_count = path_ctr[(('MAP2K1_phosphorylation_MAPK1_phospho', 1),
+                            ('MAPK1_phospho_phosphorylation_JUN_phospho', 1),
+                            ('JUN_phospho_p_obs', 1))]
+    mapk3_count = path_ctr[(('MAP2K1_phosphorylation_MAPK3_phospho', 1),
+                            ('MAPK3_phospho_phosphorylation_JUN_phospho', 1),
+                            ('JUN_phospho_p_obs', 1))]
+    assert mapk1_count == 750, mapk1_count
+    assert mapk3_count == 250, mapk3_count
+
+
+def test_weighted_sampling3():
+    "Test sampling with normed abundances but no tail probabilities from data."
+    # Abundances are normalized across rule instances involving the same gene.
+    os.environ['TEST_FLAG'] = 'TRUE'
+    map2k1 = Agent('MAP2K1', db_refs={'HGNC': '6840'})
+    mapk1 = Agent('MAPK1', db_refs={'HGNC': '6871'})
+    mapk3 = Agent('MAPK3', db_refs={'HGNC': '6877'})
+    jun = Agent('JUN', db_refs={'HGNC': '6204'})
+    mapk1_p218 = Agent('MAPK1',
+                       mods=[ModCondition('phosphorylation', 'S', '218')],
+                       db_refs={'HGNC': '6871'})
+    mapk1_p222 = Agent('MAPK1',
+                       mods=[ModCondition('phosphorylation', 'S', '222')],
+                       db_refs={'HGNC': '6871'})
+    mapk3_phos = Agent('MAPK3',
+                       mods=[ModCondition('phosphorylation')],
+                       db_refs={'HGNC': '6877'})
+    st1 = Phosphorylation(map2k1, mapk3)
+    st2 = Phosphorylation(map2k1, mapk1, 'S', '218')
+    st3 = Phosphorylation(map2k1, mapk1, 'S', '222')
+    st4 = Phosphorylation(mapk3_phos, jun)
+    st5 = Phosphorylation(mapk1_p218, jun)
+    st6 = Phosphorylation(mapk1_p222, jun)
+    stmt_to_check = Phosphorylation(map2k1, jun)
+    # Make model
+    pa = PysbAssembler()
+    pa.add_statements([st1, st2, st3, st4, st5, st6])
+    pa.make_model(policies='one_step')
+    # Set the initial conditions
+    mapk1_monomer = pa.model.all_components()['MAPK1']
+    mapk3_monomer = pa.model.all_components()['MAPK3']
+    set_base_initial_condition(pa.model, mapk1_monomer, 50)
+    set_base_initial_condition(pa.model, mapk3_monomer, 50)
+    # Do sampling
+    mc = ModelChecker(pa.model, [stmt_to_check], do_sampling=True, seed=1)
+    mc.prune_influence_map()
+    results = mc.check_model(max_path_length=5, max_paths=100)
+    assert type(results) == list
+    assert len(results) == 1
+    stmt_tuple = results[0]
+    assert len(stmt_tuple) == 2
+    assert stmt_tuple[0] == stmt_to_check
+    path_result = stmt_tuple[1]
+    assert type(path_result) == PathResult
+    path_lengths = [len(p) for p in path_result.paths]
+    assert max(path_lengths) <= 5
+    # There are two distinct paths
+    path_ctr = Counter(path_result.paths)
+    assert len(path_ctr) == 3
+    assert path_ctr[(('MAP2K1_phosphorylation_MAPK3_phospho', 1),
+                     ('MAPK3_phospho_phosphorylation_JUN_phospho', 1),
+                     ('JUN_phospho_p_obs', 1))] == 49, path_ctr
+    assert path_ctr[(('MAP2K1_phosphorylation_MAPK1_S218', 1),
+                     ('MAPK1_phosphoS218_phosphorylation_JUN_phospho', 1),
+                     ('JUN_phospho_p_obs', 1))] == 31, path_ctr
+    assert path_ctr[(('MAP2K1_phosphorylation_MAPK1_S222', 1),
+                     ('MAPK1_phosphoS222_phosphorylation_JUN_phospho', 1),
+                     ('JUN_phospho_p_obs', 1))] == 20, path_ctr
+
+
+if __name__ == '__main__':
+    test_model_check_data()
 
 # TODO Add tests for autophosphorylation
 # TODO Add test for transphosphorylation

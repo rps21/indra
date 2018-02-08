@@ -1,19 +1,22 @@
+"""Methods for obtaining a reach processor containing indra statements.
+
+Many file formats are supported. Many will run reach.
+"""
 from __future__ import absolute_import, print_function, unicode_literals
 from builtins import dict, str, bytes
-import os
+
 import json
 import logging
-import tempfile
 import requests
+
 from indra.literature import id_lookup
 import indra.literature.pmc_client as pmc_client
 import indra.literature.pubmed_client as pubmed_client
 from .processor import ReachProcessor
-# Python 2
-try:
+
+try:  # Python 2
     basestring
-# Python 3
-except:
+except NameError:  # Python 3
     basestring = str
 
 logger = logging.getLogger('reach')
@@ -128,8 +131,8 @@ def process_text(text, citation=None, offline=False):
             return None
         api_ruler = reach_reader.get_api_ruler()
         if api_ruler is None:
-            logger.error('Cannot read offline because the REACH ApiRuler ' + \
-                         'could not be instantiated.')
+            logger.error('Cannot read offline because the REACH ApiRuler '
+                         + 'could not be instantiated.')
             return None
         try:
             result_map = api_ruler.annotateText(text, 'fries')
@@ -137,7 +140,11 @@ def process_text(text, citation=None, offline=False):
             logger.error('Could not process text.')
             logger.error(e)
             return None
+        # REACH version < 1.3.3
         json_str = result_map.get('resultJson')
+        if not json_str:
+            # REACH version >= 1.3.3
+            json_str = result_map.get('result')
         if not isinstance(json_str, bytes):
             json_str = json_str.encode('utf-8')
     else:
@@ -148,11 +155,12 @@ def process_text(text, citation=None, offline=False):
             logger.error('Could not connect to REACH service:')
             logger.error(e)
             return None
-        # TODO: we could use res.json() here to get a dict 
+        # TODO: we could use res.json() here to get a dict
         # directly
         # This is a byte string
         json_str = res.content
-    assert isinstance(json_str, bytes)
+    if not isinstance(json_str, bytes):
+        raise TypeError('{} is {} instead of {}'.format(json_str, json_str.__class__, bytes))
     with open('reach_output.json', 'wb') as fh:
         fh.write(json_str)
     return process_json_str(json_str.decode('utf-8'), citation)
@@ -187,8 +195,8 @@ def process_nxml_str(nxml_str, citation=None, offline=False):
             return None
         api_ruler = reach_reader.get_api_ruler()
         if api_ruler is None:
-            logger.error('Cannot read offline because the REACH ApiRuler' +\
-                         'could not be instantiated.')
+            logger.error('Cannot read offline because the REACH ApiRuler'
+                         + 'could not be instantiated.')
             return None
         try:
             result_map = api_ruler.annotateNxml(nxml_str, 'fries')
@@ -196,12 +204,17 @@ def process_nxml_str(nxml_str, citation=None, offline=False):
             logger.error('Could not process NXML.')
             logger.error(e)
             return None
+        # REACH version < 1.3.3
         json_str = result_map.get('resultJson')
+        if not json_str:
+            # REACH version >= 1.3.3
+            json_str = result_map.get('result')
+        if json_str is None:
+            logger.warning('No results retrieved')
+            return None
         if isinstance(json_str, bytes):
             json_str = json_str.decode('utf-8')
         return process_json_str(json_str, citation)
-        rp = process_nxml_file(fname, citation, True)
-        return rp
     else:
         data = {'nxml': nxml_str}
         try:
@@ -211,8 +224,8 @@ def process_nxml_str(nxml_str, citation=None, offline=False):
             logger.error(e)
             return None
         if res.status_code != 200:
-            logger.error('Could not process NXML via REACH service.' + \
-                         'Status code: %d' % res.status_code)
+            logger.error('Could not process NXML via REACH service.'
+                         + 'Status code: %d' % res.status_code)
             return None
         json_str = res.text
         with open('reach_output.json', 'wb') as fh:
@@ -246,6 +259,7 @@ def process_nxml_file(file_name, citation=None, offline=False):
     with open(file_name, 'rb') as f:
         nxml_str = f.read().decode('utf-8')
         return process_nxml_str(nxml_str, citation, False)
+
 
 def process_json_file(file_name, citation=None):
     """Return a ReachProcessor by processing the given REACH json file.
@@ -296,15 +310,19 @@ def process_json_str(json_str, citation=None):
         A ReachProcessor containing the extracted INDRA Statements
         in rp.statements.
     """
-    assert isinstance(json_str, basestring)
-    json_str = json_str.replace('frame-id','frame_id')
-    json_str = json_str.replace('argument-label','argument_label')
-    json_str = json_str.replace('object-meta','object_meta')
-    json_str = json_str.replace('doc-id','doc_id')
-    json_str = json_str.replace('is-hypothesis','is_hypothesis')
-    json_str = json_str.replace('is-negated','is_negated')
-    json_str = json_str.replace('is-direct','is_direct')
-    json_str = json_str.replace('found-by','found_by')
+    if not isinstance(json_str, basestring):
+        raise TypeError('{} is {} instead of {}'.format(json_str,
+                                                        json_str.__class__,
+                                                        basestring))
+
+    json_str = json_str.replace('frame-id', 'frame_id')
+    json_str = json_str.replace('argument-label', 'argument_label')
+    json_str = json_str.replace('object-meta', 'object_meta')
+    json_str = json_str.replace('doc-id', 'doc_id')
+    json_str = json_str.replace('is-hypothesis', 'is_hypothesis')
+    json_str = json_str.replace('is-negated', 'is_negated')
+    json_str = json_str.replace('is-direct', 'is_direct')
+    json_str = json_str.replace('found-by', 'found_by')
     try:
         json_dict = json.loads(json_str)
     except ValueError:

@@ -144,7 +144,10 @@ def map_to_human_site(up_id, mod_res, mod_pos):
         base_id_sites = [site for site in human_sites
                          if site.ACC_ID.find('-') == -1]
         if base_id_sites:
-            assert len(base_id_sites) == 1, 'Should only be one human ref seq'
+            if len(base_id_sites) != 1:
+                logger.warning("There is more than one apparent ref seq: %s" %
+                               base_id_sites)
+                return None
             human_site = base_id_sites[0]
         # There is no base ID site, i.e., all mapped sites are for specific
         # isoforms only, so skip it!
@@ -157,7 +160,10 @@ def map_to_human_site(up_id, mod_res, mod_pos):
         human_site = human_sites[0]
     human_site_str = human_site.MOD_RSD.split('-')[0]
     human_res = human_site_str[0]
-    assert human_res == mod_res
     human_pos = human_site_str[1:]
+    if human_res != mod_res:
+        logger.warning("Mapped residue %s at position %s does not match "
+                       "original residue %s" % (human_res, human_pos, mod_res))
+        return None
     return human_pos
 

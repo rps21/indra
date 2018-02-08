@@ -671,3 +671,51 @@ def test_52():
     assert(pip3.name.startswith('PIP'))
     assert(pip3.name.endswith('3'))
 
+def test_53():
+    sentence = 'MEK increases the phosphorylation of ERK.'
+    tp = process_sentence_xml(sentence)
+    assert_onestmt(tp)
+    st = tp.statements[0]
+    assert(isinstance(st, Phosphorylation))
+    mek = st.enz
+    erk = st.sub
+    assert(mek.name == 'MEK')
+    assert(erk.name == 'ERK')
+    for ev in st.evidence:
+        assert ev.epistemics.get('direct') == False
+
+def test_54():
+    sentence = 'EGF leads to the phosphorylation of ERK.'
+    tp = process_sentence_xml(sentence)
+    assert_onestmt(tp)
+    st = tp.statements[0]
+    assert(isinstance(st, Phosphorylation))
+    mek = st.enz
+    erk = st.sub
+    assert(mek.name == 'EGF')
+    assert(erk.name == 'ERK')
+    for ev in st.evidence:
+        assert ev.epistemics.get('direct') == False
+
+def test_55():
+    sentence = 'Unphosphorylated ERK is degraded.'
+    tp = process_sentence_xml(sentence)
+    assert_onestmt(tp)
+    st = tp.statements[0]
+    assert(isinstance(st, DecreaseAmount))
+    erk = st.obj
+    assert(erk.name == 'ERK')
+    assert len(erk.mods) == 1
+    assert erk.mods[0].is_modified == False
+
+def test_56():
+    sentence = 'Activated TGFBR1 phosphorylates SMURF2.'
+    tp = process_sentence_xml(sentence)
+    assert_onestmt(tp)
+    st = tp.statements[0]
+    assert(isinstance(st, Phosphorylation))
+    tgfbr1 = st.enz
+    assert(tgfbr1.name == 'TGFBR1')
+    assert tgfbr1.activity is not None
+    assert tgfbr1.activity.activity_type == 'activity'
+    assert tgfbr1.activity.is_active == True

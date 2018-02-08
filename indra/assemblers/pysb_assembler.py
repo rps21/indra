@@ -3,7 +3,7 @@ from builtins import dict, str
 import re
 import logging
 import itertools
-from copy import deepcopy
+from indra.util import fast_deepcopy
 
 from pysb import (Model, Monomer, Parameter, Expression, Observable, Rule,
         Annotation, ComponentDuplicateNameError, ComplexPattern,
@@ -1238,7 +1238,7 @@ def modification_assemble_interactions_only(stmt, model, agent_set):
     # Create a rule specifying that the substrate binds to the kinase at
     # its active site
     lhs = enz(**{active_site: None}) + sub(**{mod_site: None})
-    rhs = enz(**{active_site: 1}) + sub(**{mod_site: 1})
+    rhs = enz(**{active_site: 1}) % sub(**{mod_site: 1})
     r_fwd = Rule(rule_name + '_fwd', lhs >> rhs, kf_bind)
     add_rule_to_model(model, r_fwd)
 
@@ -1557,7 +1557,7 @@ def demodification_assemble_interactions_only(stmt, model, agent_set):
     r = Rule('%s_%s_%s_%s' %
              (rule_enz_str, demod_condition_name, rule_sub_str, demod_site),
              enz(**{active_site: None}) + sub(**{demod_site: None}) >>
-             enz(**{active_site: 1}) + sub(**{demod_site: 1}),
+             enz(**{active_site: 1}) % sub(**{demod_site: 1}),
              kf_bind)
     add_rule_to_model(model, r)
 
@@ -2004,7 +2004,7 @@ def gef_assemble_interactions_only(stmt, model, agent_set):
              (rule_gef_str, rule_ras_str),
              gef(**{'gef_site': None}) +
              ras(**{'p_loop': None}) >>
-             gef(**{'gef_site': 1}) +
+             gef(**{'gef_site': 1}) %
              ras(**{'p_loop': 1}),
              kf_bind)
     add_rule_to_model(model, r)
@@ -2067,7 +2067,7 @@ def gap_assemble_interactions_only(stmt, model, agent_set):
              (rule_gap_str, rule_ras_str),
              gap(**{'gap_site': None}) +
              ras(**{'gtp_site': None}) >>
-             gap(**{'gap_site': 1}) +
+             gap(**{'gap_site': 1}) %
              ras(**{'gtp_site': 1}),
              kf_bind)
     add_rule_to_model(model, r)
@@ -2196,7 +2196,7 @@ def decreaseamount_assemble_interactions_only(stmt, model, agent_set):
 
     r = Rule(rule_name,
              subj(**{subj_site_name: None}) + obj(**{obj_site_name: None}) >>
-             subj(**{subj_site_name: 1}) + obj(**{obj_site_name: 1}),
+             subj(**{subj_site_name: 1}) % obj(**{obj_site_name: 1}),
              kf_bind)
 
     anns = [Annotation(rule_name, stmt.uuid, 'from_indra_statement')]
@@ -2227,7 +2227,7 @@ def decreaseamount_assemble_one_step(stmt, model, agent_set):
         rule_subj_str = get_agent_rule_str(stmt.subj)
         rule_name = '%s_degrades_%s' % (rule_subj_str, rule_obj_str)
         r = Rule(rule_name,
-            subj_pattern + obj_pattern >> subj_pattern,
+            subj_pattern + obj_pattern >> subj_pattern + None,
             kf_one_step_degrade)
     anns = [Annotation(rule_name, stmt.uuid, 'from_indra_statement')]
     anns += [Annotation(rule_name, obj_pattern.monomer.name, 'rule_has_object')]
@@ -2263,7 +2263,7 @@ def increaseamount_assemble_interactions_only(stmt, model, agent_set):
 
     r = Rule(rule_name,
             subj(**{subj_site_name: None}) + obj(**{obj_site_name: None}) >>
-            subj(**{subj_site_name: 1}) + obj(**{obj_site_name: 1}),
+            subj(**{subj_site_name: 1}) % obj(**{obj_site_name: 1}),
             kf_bind)
     anns = [Annotation(rule_name, stmt.uuid, 'from_indra_statement')]
     anns += [Annotation(rule_name, obj.name, 'rule_has_object')]
@@ -2323,7 +2323,7 @@ def increaseamount_assemble_one_step(stmt, model, agent_set, rate_law=None):
                 kf * (subj_obs ** (n_hill-1)) / (Ka**n_hill + subj_obs**n_hill))
             model.add_component(synth_rate)
 
-        r = Rule(rule_name, subj_pattern >> subj_pattern + obj_pattern,
+        r = Rule(rule_name, subj_pattern + None >> subj_pattern + obj_pattern,
                  synth_rate)
     anns = [Annotation(rule_name, stmt.uuid, 'from_indra_statement')]
     anns += [Annotation(rule_name, obj_pattern.monomer.name, 'rule_has_object')]
@@ -2336,6 +2336,21 @@ increaseamount_assemble_default = increaseamount_assemble_one_step
 increaseamount_monomers_hill = increaseamount_monomers_one_step
 increaseamount_assemble_hill = lambda a, b, c: \
         increaseamount_assemble_one_step(a, b, c, 'hill')
+
+
+# INFLUENCE ###################################################
+
+influence_monomers_one_step = increaseamount_monomers_one_step
+def influence_assemble_one_step(stmt, *args):
+    if stmt.overall_polarity() == -1:
+        return decreaseamount_assemble_one_step(stmt, *args)
+    else:
+        return increaseamount_assemble_one_step(stmt, *args)
+influence_monomers_default = influence_monomers_one_step
+influence_assemble_default = influence_assemble_one_step
+
+
+# CONVERSION ###################################################
 
 def conversion_monomers_one_step(stmt, agent_set):
     # Skip statements with more than one from object due to complications
@@ -2430,7 +2445,7 @@ class PysbPreassembler(object):
                 # Handle the case where an activity flag is set
                 agent_to_add = stmt.agent
                 if stmt.agent.activity:
-                    new_agent = deepcopy(stmt.agent)
+                    new_agent = fast_deepcopy(stmt.agent)
                     new_agent.activity = None
                     agent_to_add = new_agent
                 base_agent.add_activity_form(agent_to_add, stmt.is_active)
@@ -2470,7 +2485,7 @@ class PysbPreassembler(object):
                     # We now iterate over the active agent forms and create
                     # new agents
                     for af in active_forms:
-                        new_agent = deepcopy(agent)
+                        new_agent = fast_deepcopy(agent)
                         self._set_agent_context(af, new_agent)
                         agent_forms[i].append(new_agent)
                 # Otherwise we just copy over the agent as is
@@ -2480,7 +2495,7 @@ class PysbPreassembler(object):
             # statements as needed
             agent_combs = itertools.product(*agent_forms)
             for agent_comb in agent_combs:
-                new_stmt = deepcopy(stmt)
+                new_stmt = fast_deepcopy(stmt)
                 new_stmt.set_agent_list(agent_comb)
                 new_stmts.append(new_stmt)
         self.statements = new_stmts

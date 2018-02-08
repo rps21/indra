@@ -11,7 +11,7 @@ except ImportError:
     from functools32 import lru_cache
 
 from indra.java_vm import autoclass, JavaException, cast
-from indra.databases import hgnc_client, uniprot_client
+from indra.databases import hgnc_client, uniprot_client, chebi_client
 from indra.statements import *
 from . import pathway_commons_client as pcc
 from indra.util import decode_obj
@@ -85,7 +85,7 @@ class BiopaxProcessor(object):
             members = self._get_complex_members(bpe)
             if members is not None:
                 if len(members) > 10:
-                    logger.info('Skipping complex with more than 10 members.')
+                    logger.debug('Skipping complex with more than 10 members.')
                     continue
                 complexes = _get_combinations(members)
                 for c in complexes:
@@ -101,7 +101,7 @@ class BiopaxProcessor(object):
         with additional constraints to specify the type of state change
         occurring (phosphorylation, deubiquitination, etc.).
         """
-        for modclass, modtype in modclass_to_modtype.items():
+        for modtype, modclass in modtype_to_modclass.items():
             # TODO: we could possibly try to also extract generic
             # modifications here
             if modtype == 'modification':
@@ -204,7 +204,7 @@ class BiopaxProcessor(object):
                     continue
                 cat_dir = control.getCatalysisDirection()
                 if cat_dir is not None and cat_dir.name() != 'LEFT_TO_RIGHT':
-                    logger.info('Unexpected catalysis direction: %s.' % \
+                    logger.debug('Unexpected catalysis direction: %s.' % \
                         control.getCatalysisDirection())
                     continue
 
@@ -585,7 +585,7 @@ class BiopaxProcessor(object):
         if not member_pes:
             member_pes = cplx.getMemberPhysicalEntity().toArray()
             if not member_pes:
-                logger.info('Complex "%s" has no members.' %
+                logger.debug('Complex "%s" has no members.' %
                             cplx.getDisplayName())
                 return None
         members = []
@@ -653,7 +653,7 @@ class BiopaxProcessor(object):
                 continue
             cat_dir = control.getCatalysisDirection()
             if cat_dir is not None and cat_dir.name() != 'LEFT_TO_RIGHT':
-                logger.info('Unexpected catalysis direction: %s.' % \
+                logger.debug('Unexpected catalysis direction: %s.' % \
                     control.getCatalysisDirection())
                 continue
 
@@ -754,13 +754,13 @@ class BiopaxProcessor(object):
                 else:
                     msg = 'Cannot handle complex enzymes with ' + \
                             'aggregate non-protein binding partners.'
-                    logger.info(msg)
+                    logger.debug(msg)
                     continue
             return enzs
         else:
             msg = 'Cannot handle complex enzymes with ' + \
                     'multiple protein members.'
-            logger.info(msg)
+            logger.debug(msg)
             return None
 
     @staticmethod
@@ -868,7 +868,7 @@ class BiopaxProcessor(object):
                 known_mf_type = mf_type_indra
                 break
         if not known_mf_type:
-            logger.info('Skipping modification with unknown terms: %s' %
+            logger.debug('Skipping modification with unknown terms: %s' %
                         ', '.join(mf_type_terms))
             return None
 
@@ -890,7 +890,7 @@ class BiopaxProcessor(object):
                 if mf_pos_status is None:
                     mod_pos = None
                 elif mf_pos_status and mf_pos_status.toString() != 'EQUAL':
-                    logger.info('Modification site position is %s' %
+                    logger.debug('Modification site position is %s' %
                                 mf_pos_status.toString())
                 else:
                     mod_pos = mf_site.getSequencePosition()
@@ -907,8 +907,17 @@ class BiopaxProcessor(object):
         if not citations:
             citations = [None]
         epi = {'direct': True}
+        sources = bpe.getDataSource().toArray()
+        annotations = {}
+        if sources:
+            if len(sources) > 1:
+                logger.warning('More than one data source for %s' % bpe.uri)
+            if sources[0].uri:
+                entry = sources[0].uri.split('/')[-1]
+                annotations['source_sub_id'] = entry
         ev = [Evidence(source_api='biopax', pmid=cit,
-                       source_id=source_id, epistemics=epi)
+                       source_id=source_id, epistemics=epi,
+                       annotations=annotations)
               for cit in citations]
         return ev
 
@@ -950,10 +959,17 @@ class BiopaxProcessor(object):
                 db_refs['HGNC'] = hgnc_id
             if uniprot_id is not None:
                 db_refs['UP'] = uniprot_id
+            if not hgnc_id and not uniprot_id:
+                rna_groundings = BiopaxProcessor._get_rna_grounding(bpe)
+                db_refs.update(rna_groundings)
         elif _is_small_molecule(bpe):
             chebi_id = BiopaxProcessor._get_chebi_id(bpe)
             if chebi_id is not None:
                 db_refs['CHEBI'] = chebi_id
+            else:
+                chemical_groundings = \
+                    BiopaxProcessor._get_chemical_grounding(bpe)
+                db_refs.update(chemical_groundings)
         else:
             chebi_id = BiopaxProcessor._get_chebi_id(bpe)
             if chebi_id is not None:
@@ -994,7 +1010,7 @@ class BiopaxProcessor(object):
         elif _is_physical_entity(bpe):
             name = bpe.getDisplayName()
         else:
-            logger.info('Unhandled entity type %s' %
+            logger.debug('Unhandled entity type %s' %
                         bpe.getModelInterface().getName())
             name = bpe.getDisplayName()
 
@@ -1071,31 +1087,72 @@ class BiopaxProcessor(object):
         xrefs = bp_entref.getXref().toArray()
         chebi_ids = []
         for xr in xrefs:
-            if xr.getDb().upper() == 'CHEBI':
-                chebi_ids.append(xr.getId().replace('CHEBI:', ''))
-            elif xr.getDb().upper() == 'CAS':
-                # Special handling of common entities
-                if xr.getId() == '86-01-1':
-                    chebi_ids.append('15996')
-                elif xr.getId() == '86527-72-2':
-                    chebi_ids.append('15996')
-                elif xr.getId() == '24696-26-2':
-                    chebi_ids.append('17761')
-                elif xr.getId() == '23261-20-3':
-                    chebi_ids.append('18035')
-                elif xr.getId() == '146-91-8':
-                    chebi_ids.append('17552')
-                elif xr.getId() == '165689-82-7':
-                    chebi_ids.append('16618')
+            dbname = xr.getDb()
+            dbid = xr.getId()
+            if dbname is None:
+                continue
+            dbname = dbname.upper()
+            if dbname == 'CHEBI':
+                chebi_ids.append(dbid.replace('CHEBI:', ''))
+            elif dbname == 'CAS':
+                chebi_mapped = chebi_client.get_chebi_id_from_cas(dbid)
+                if chebi_mapped is not None:
+                    chebi_ids.append(chebi_mapped)
                 else:
-                    logger.info('Unknown cas id: %s (%s)' %
-                                 (xr.getId(), bpe.getDisplayName()))
+                    logger.info('Unknown CAS id: %s (%s)' %
+                                 (dbid, bpe.getDisplayName()))
         if not chebi_ids:
             return None
         elif len(chebi_ids) == 1:
             return chebi_ids[0]
         else:
             return chebi_ids
+
+    @staticmethod
+    def _get_rna_grounding(bpe):
+        bp_entref = BiopaxProcessor._get_entref(bpe)
+        if bp_entref is None:
+            return {}
+        xrefs = bp_entref.getXref().toArray()
+        rna_grounding = {}
+        for xr in xrefs:
+            dbname = xr.getDb()
+            dbid = xr.getId()
+            if dbname is None:
+                continue
+            dbname = dbname.upper()
+            if dbname in ('MIRBASE SEQUENCE', 'MIRBASE'):
+                rna_grounding['MIRBASE'] = dbid
+            elif dbname == 'MIRBASE MATURE SEQUENCE':
+                rna_grounding['MIRBASEM'] = dbid
+            elif dbname == 'NCBI GENE':
+                rna_grounding['NCBI'] = dbid
+            elif dbname == 'ENSEMBL':
+                rna_grounding['ENSEMBL'] = dbid
+        return rna_grounding
+
+    @staticmethod
+    def _get_chemical_grounding(bpe):
+        bp_entref = BiopaxProcessor._get_entref(bpe)
+        if bp_entref is None:
+            return {}
+        xrefs = bp_entref.getXref().toArray()
+        chemical_grounding = {}
+        for xr in xrefs:
+            dbname = xr.getDb()
+            dbid = xr.getId()
+            if dbname is None:
+                continue
+            dbname = dbname.upper()
+            if dbname == 'PUBCHEM-COMPOUND':
+                chemical_grounding['PUBCHEM'] = 'PUBCHEM:%s' % dbid
+            elif dbname == 'MESH':
+                chemical_grounding['MESH'] = dbid
+            elif dbname == 'DRUGBANK':
+                chemical_grounding['DRUGBANK'] = dbid
+            elif dbname == 'HMDB':
+                chemical_grounding['HMDB'] = dbid
+        return chemical_grounding
 
     @staticmethod
     def _get_hgnc_id(bpe):

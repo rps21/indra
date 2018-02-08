@@ -1,13 +1,14 @@
 from __future__ import absolute_import, print_function, unicode_literals
 from builtins import dict, str
+import unittest
 from indra.sources import reach
 from indra.sources.reach.processor import ReachProcessor
 from indra.util import unicode_strs
-from indra.statements import IncreaseAmount, DecreaseAmount
+from indra.statements import IncreaseAmount, DecreaseAmount, Dephosphorylation
 
 # Change this list to control what modes of
 # reading are enabled in tests
-offline_modes = [False, True]
+offline_modes = [True]
 
 def test_parse_site_text():
     text = ['threonine 185', 'thr 185', 'thr-185',
@@ -72,6 +73,19 @@ def test_phosphorylate():
         assert (s.enz.name == 'MAP2K1')
         assert (s.sub.name == 'MAPK1')
         assert unicode_strs(rp.statements)
+
+
+def test_indirect_phosphorylate():
+    txt = 'DUSP decreases the phosphorylation of ERK.'
+    for offline in offline_modes:
+        rp = reach.process_text(txt, offline=offline)
+        assert len(rp.statements) == 1
+        s = rp.statements[0]
+        assert isinstance(s, Dephosphorylation)
+        assert s.enz.name == 'DUSP'
+        assert s.sub.name == 'ERK'
+        assert s.evidence[0].epistemics.get('direct') == False
+
 
 def test_regulate_amount():
     for offline in offline_modes:
@@ -156,6 +170,7 @@ def test_process_unicode():
         rp = reach.process_text('MEK1 binds ERK2\U0001F4A9.', offline=offline)
         assert unicode_strs(rp.statements)
 
+@unittest.skip('Taking too long on Travis')
 def test_process_pmc():
     for offline in offline_modes:
         rp = reach.process_pmc('PMC4338247', offline=offline)

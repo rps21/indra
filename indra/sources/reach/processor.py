@@ -10,6 +10,8 @@ import indra.databases.uniprot_client as up_client
 
 logger = logging.getLogger('reach')
 
+
+
 class ReachProcessor(object):
     """The ReachProcessor extracts INDRA Statements from REACH parser output.
 
@@ -79,21 +81,29 @@ class ReachProcessor(object):
 
     def get_modifications(self):
         """Extract Modification INDRA Statements."""
+        # Find all event frames that are a type of protein modification
         qstr = "$.events.frames[(@.type is 'protein-modification')]"
         res = self.tree.execute(qstr)
         if res is None:
             return
+        # Extract each of the results when possible
         for r in res:
+            # The subtype of the modification
             modification_type = r.get('subtype')
+
+            # Skip negated events (i.e. something doesn't happen)
             epistemics = self._get_epistemics(r)
             if epistemics.get('negative'):
                 continue
+
             context = self._get_context(r)
             frame_id = r['frame_id']
             args = r['arguments']
             site = None
             theme = None
 
+            # Find the substrate (the "theme" agent here) and the
+            # site and position it is modified on
             for a in args:
                 if self._get_arg_type(a) == 'theme':
                     theme = a['arg']
@@ -105,6 +115,9 @@ class ReachProcessor(object):
             else:
                 residue = None
                 pos = None
+
+            # Now we need to look for all regulation event to get to the
+            # enzymes (the "controller" here)
             qstr = "$.events.frames[(@.type is 'regulation') and " + \
                    "(@.arguments[0].arg is '%s')]" % frame_id
             reg_res = self.tree.execute(qstr)
@@ -118,6 +131,18 @@ class ReachProcessor(object):
                             controller_agent = \
                                 self._get_agent_from_entity(controller)
                             break
+                # Check the polarity of the regulation and if negative,
+                # flip the modification type.
+                # For instance, negative-regulation of a phosphorylation
+                # will become an (indirect) dephosphorylation
+                reg_subtype = reg.get('subtype')
+                if reg_subtype == 'negative-regulation':
+                    modification_type = \
+                        modtype_to_inverse.get(modification_type)
+                    if not modification_type:
+                        logger.warning('Unhandled modification type: %s' %
+                                       modification_type)
+                        continue
 
                 sentence = reg['verbose-text']
                 ev = Evidence(source_api='reach', text=sentence,
@@ -608,7 +633,7 @@ _site_pattern7 = '.*(' + '|'.join([v['indra_name'].upper() for
                                  v in amino_acids.values()]) + ').*'
 _site_pattern8 = '([0-9]+)$'
 
-# Subtypes that exist but we don't handle: methylation, hydrolysis
+# Subtypes that exist but we don't handle: hydrolysis
 agent_mod_map = {
     'phosphorylation': ('phosphorylation', True),
     'phosphorylated': ('phosphorylation', True),
@@ -645,3 +670,56 @@ def _read_bioentities_map():
     return bioentities_map
 
 bioentities_map = _read_bioentities_map()
+
+
+def _read_reach_rule_regexps():
+    """Load in a file with the regular expressions corresponding to each
+    reach rule. Why regular expression matching?
+    The rule name in found_by has instances of some reach rules for each
+    possible event type
+    (activation, binding, etc). This makes for too many different types of
+    rules for practical curation of examples.
+    We use regular expressions to only match the rule used for extraction,
+    independently of what the event is.
+    """
+    reach_rule_filename = \
+        os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     'reach_rule_regexps.txt')
+    with open(reach_rule_filename, 'r') as f:
+        reach_rule_regexp = []
+        for line in f:
+            reach_rule_regexp.append(line.rstrip())
+    return reach_rule_regexp
+
+
+reach_rule_regexps = _read_reach_rule_regexps()
+
+
+def determine_reach_subtype(event_name):
+    """Returns the category of reach rule from the reach rule instance.
+
+    Looks at a list of regular
+    expressions corresponding to reach rule types, and returns the longest
+    regexp that matches, or None if none of them match.
+
+    Parameters
+    ----------
+    evidence: indra.statements.Evidence
+        A reach evidence object to subtype
+
+    Returns
+    -------
+    best_match: str
+        A regular expression corresponding to the reach rule that was used to
+        extract this evidence
+    """
+
+    best_match_length = None
+    best_match = None
+    for ss in reach_rule_regexps:
+        if re.search(ss, event_name):
+            if best_match is None or len(ss) > best_match_length:
+                best_match = ss
+                best_match_length = len(ss)
+
+    return best_match
