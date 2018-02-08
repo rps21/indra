@@ -1,0 +1,48 @@
+    stmts = ac.filter_by_type(stmts, Complex, invert=True)
+    stmts = ac.filter_direct(stmts)
+    stmts = ac.filter_belief(stmts, 0.95)
+    stmts = ac.filter_top_level(stmts)
+    stmts = ac.filter_gene_list(stmts, data_genes, 'all')
+    stmts = ac.filter_enzyme_kinase(stmts)
+    stmts = ac.filter_mod_nokinase(stmts)
+    stmts = ac.filter_transcription_factor(stmts)
+    # Simplify activity types
+    ml = MechLinker(stmts)
+    ml.gather_explicit_activities()
+    ml.reduce_activities()
+    ml.gather_modifications()
+    ml.reduce_modifications()
+    af_stmts = ac.filter_by_type(ml.statements, ActiveForm)
+    non_af_stmts = ac.filter_by_type(ml.statements, ActiveForm, invert=True)
+    af_stmts = ac.run_preassembly(af_stmts)
+    stmts = af_stmts + non_af_stmts
+    # Replace activations when possible
+    ml = MechLinker(stmts)
+    ml.gather_explicit_activities()
+    ml.replace_activations()
+    # Require active forms
+    ml.require_active_forms()
+    num_stmts = len(ml.statements)
+    while True:
+        # Remove inconsequential PTMs
+        ml.statements = ac.filter_inconsequential_mods(ml.statements,
+                                                       get_mod_whitelist())
+        ml.statements = ac.filter_inconsequential_acts(ml.statements,
+                                                       get_mod_whitelist())
+        if num_stmts <= len(ml.statements):
+            break
+        num_stmts = len(ml.statements)
+    stmts = ml.statements
+
+#To consider, in combination with coarse graining. 
+def get_mod_whitelist():
+    # TODO: populate this with the actual antibody sites
+    mod_whitelist = {}
+    for members in antibody_map.values():
+        for gene_name, phos_sites in members.items():
+            for residue, position in phos_sites:
+                if gene_name not in mod_whitelist:
+                    mod_whitelist[gene_name] = []
+                entry = ('phosphorylation', residue, position)
+                mod_whitelist[gene_name].append(entry)
+    return mod_whitelist
