@@ -1,5 +1,5 @@
-Processors for model input (:py:mod:`indra.sources`)
-====================================================
+Processors for knowledge input (:py:mod:`indra.sources`)
+========================================================
 
 .. toctree::
    :maxdepth: 3
@@ -11,3 +11,5 @@ Processors for model input (:py:mod:`indra.sources`)
    ndex_cx/index
    signor/index
    geneways/index
+   tees/index
+   eidos/index

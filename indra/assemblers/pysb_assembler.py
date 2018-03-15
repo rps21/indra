@@ -669,7 +669,7 @@ class PysbAssembler(object):
 
         If policies is a string, it defines a global assembly policy
         that applies to all Statement types.
-        Example: contact_only, one_step
+        Example: one_step, interactions_only
 
         A dictionary of policies has keys corresponding to Statement types
         and values to the policy to be applied to that type of Statement.
@@ -2345,7 +2345,7 @@ def influence_assemble_one_step(stmt, *args):
     if stmt.overall_polarity() == -1:
         return decreaseamount_assemble_one_step(stmt, *args)
     else:
-        return increaseamount_assemble_one_step(stmt, *args)
+        return increaseamount_assemble_one_step(stmt, *args, rate_law='hill')
 influence_monomers_default = influence_monomers_one_step
 influence_assemble_default = influence_assemble_one_step
 

@@ -9,6 +9,7 @@ import logging
 from io import BytesIO
 from os import path
 from numbers import Number
+from datetime import datetime
 
 from sqlalchemy.sql import expression as sql_expressions
 from sqlalchemy.schema import DropTable
@@ -16,7 +17,7 @@ from sqlalchemy.sql.expression import Delete, Update
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, Integer, String, UniqueConstraint, ForeignKey,\
-    TIMESTAMP, create_engine, inspect, LargeBinary
+    TIMESTAMP, create_engine, inspect, LargeBinary, Boolean, DateTime, func
 from sqlalchemy.orm import relationship, sessionmaker
 from sqlalchemy.dialects.postgresql import BYTEA
 
@@ -168,6 +169,8 @@ class DatabaseManager(object):
             pii = Column(String(250))
             url = Column(String(250), unique=True)  # Maybe longer?
             manuscript_id = Column(String(100), unique=True)
+            create_date = Column(DateTime, default=func.now())
+            last_updated = Column(DateTime, onupdate=func.now())
             __table_args__ = (
                 UniqueConstraint('pmid', 'doi'),
                 UniqueConstraint('pmcid', 'doi')
@@ -178,9 +181,18 @@ class DatabaseManager(object):
             id = Column(Integer, primary_key=True)
             source = Column(String(250), nullable=False)
             name = Column(String(250), nullable=False)
+            load_date = Column(DateTime, default=func.now())
             __table_args__ = (
                 UniqueConstraint('source', 'name'),
                 )
+
+        class Updates(self.Base):
+            __tablename__ = 'updates'
+            id = Column(Integer, primary_key=True)
+            init_upload = Column(Boolean, nullable=False)
+            source = Column(String(250), nullable=False)
+            unresolved_conflicts_file = Column(Bytea)
+            datetime = Column(DateTime, default=func.now())
 
         class TextContent(self.Base):
             __tablename__ = 'text_content'
@@ -193,6 +205,8 @@ class DatabaseManager(object):
             format = Column(String(250), nullable=False)
             text_type = Column(String(250), nullable=False)
             content = Column(Bytea, nullable=False)
+            insert_date = Column(DateTime, default=func.now())
+            last_updated = Column(DateTime, onupdate=func.now())
             __table_args__ = (
                 UniqueConstraint(
                     'text_ref_id', 'source', 'format', 'text_type'
@@ -210,6 +224,8 @@ class DatabaseManager(object):
             reader_version = Column(String(20), nullable=False)
             format = Column(String(20), nullable=False)  # xml, json, etc.
             bytes = Column(Bytea, nullable=False)
+            create_date = Column(DateTime, default=func.now())
+            last_updated = Column(DateTime, onupdate=func.now())
             __table_args__ = (
                 UniqueConstraint(
                     'text_content_id', 'reader', 'reader_version'
@@ -220,7 +236,8 @@ class DatabaseManager(object):
             __tablename__ = 'db_info'
             id = Column(Integer, primary_key=True)
             db_name = Column(String(20), nullable=False)
-            timestamp = Column(TIMESTAMP, nullable=False)
+            create_date = Column(DateTime, default=func.now())
+            last_updated = Column(DateTime, onupdate=func.now())
 
         class Statements(self.Base):
             __tablename__ = 'statements'
@@ -233,6 +250,7 @@ class DatabaseManager(object):
             type = Column(String(100), nullable=False)
             indra_version = Column(String(100), nullable=False)
             json = Column(Bytea, nullable=False)
+            create_date = Column(DateTime, default=func.now())
 
         class Agents(self.Base):
             __tablename__ = 'agents'
@@ -246,8 +264,8 @@ class DatabaseManager(object):
             role = Column(String(20), nullable=False)
 
         self.tables = {}
-        for tbl in [TextRef, TextContent, Readings, SourceFile, DBInfo,
-                    Statements, Agents]:
+        for tbl in [TextRef, TextContent, Readings, SourceFile, Updates,
+                    DBInfo, Statements, Agents]:
             self.tables[tbl.__tablename__] = tbl
             self.__setattr__(tbl.__name__, tbl)
         self.engine = create_engine(host)
@@ -256,9 +274,8 @@ class DatabaseManager(object):
         try:
             self.grab_session()
             self.session.rollback()
-        except Exception as e:
+        except:
             print("Failed to execute rollback of database upon deletion.")
-            raise e
 
     def create_tables(self, tbl_list=None):
         "Create the tables for INDRA database."
@@ -370,11 +387,15 @@ class DatabaseManager(object):
         "Get the tables currently active in the database."
         return inspect(self.engine).get_table_names()
 
-    def get_columns(self, tbl_name):
+    def get_column_names(self, tbl_name):
         "Get a list of the column labels for a table."
-        if isinstance(tbl_name, type(self.Base)):
-            tbl_name = tbl_name.__tablename__
-        return self.Base.metadata.tables[tbl_name].columns.keys()
+        return self.get_column_objects(tbl_name).keys()
+
+    def get_column_objects(self, table):
+        'Get a list of the column object for the given table.'
+        if isinstance(table, type(self.Base)):
+            table = table.__tablename__
+        return self.Base.metadata.tables[table].columns
 
     def commit(self, err_msg):
         "Commit, and give useful info if there is an exception."
@@ -394,7 +415,7 @@ class DatabaseManager(object):
     def get_values(self, entry_list, col_names=None, keyed=False):
         "Get the column values from the entries in entry_list"
         if col_names is None and len(entry_list) > 0:  # Get everything.
-            col_names = self.get_columns(entry_list[0].__tablename__)
+            col_names = self.get_column_names(entry_list[0].__tablename__)
         ret = []
         for entry in entry_list:
             if _isiterable(col_names):
@@ -409,7 +430,7 @@ class DatabaseManager(object):
     def insert(self, tbl_name, ret_info='id', **input_dict):
         "Insert a an entry into specified table, and return id."
         self.grab_session()
-        inputs = dict.fromkeys(self.get_columns(tbl_name))
+        inputs = dict.fromkeys(self.get_column_names(tbl_name))
         inputs.update(input_dict)
         new_entry = self.tables[tbl_name](**inputs)
         self.session.add(new_entry)
@@ -420,7 +441,7 @@ class DatabaseManager(object):
     def insert_many(self, tbl_name, input_dict_list, ret_info='id'):
         "Insert many records into the table given by table_name."
         self.grab_session()
-        inputs = dict.fromkeys(self.get_columns(tbl_name))
+        inputs = dict.fromkeys(self.get_column_names(tbl_name))
         entry_list = []
         for input_dict in input_dict_list:
             inputs.update(input_dict)
@@ -442,16 +463,36 @@ class DatabaseManager(object):
 
     def copy(self, tbl_name, data, cols=None):
         "Use pg_copy to copy over a large amount of data."
+        logger.info("Received request to copy %d entries into %s." %
+                    (len(data), tbl_name))
         if len(data) is 0:
             return  # Nothing to do....
 
+        # If cols is not specified, use all the cols in the table, else check
+        # to make sure the names are valid.
         if cols is None:
-            cols = self.get_columns(tbl_name)
+            cols = self.get_column_names(tbl_name)
         else:
-            assert all([col in self.get_columns(tbl_name) for col in cols]),\
+            db_cols = self.get_column_names(tbl_name)
+            assert all([col in db_cols for col in cols]),\
                 "Do not recognize one of the columns in %s for table %s." % \
                 (cols, tbl_name)
+
+        # Do the copy. Use pgcopy if available.
         if self.sqltype == sqltypes.POSTGRESQL and CAN_COPY:
+            # Check for automatic timestamps which won't be applied by the
+            # database when using copy, and manually insert them.
+            auto_timestamp_type = type(func.now())
+            for col in self.get_column_objects(tbl_name):
+                if col.default is not None:
+                    if isinstance(col.default.arg, auto_timestamp_type) \
+                       and col.name not in cols:
+                        logger.info("Applying timestamps to %s." % col.name)
+                        now = datetime.utcnow()
+                        cols += (col.name,)
+                        data = [datum + (now,) for datum in data]
+
+            # Now actually do the copy
             conn = self.engine.raw_connection()
             mngr = CopyManager(conn, tbl_name, cols)
             data_bts = []
@@ -462,13 +503,14 @@ class DatabaseManager(object):
                         new_entry.append(element.encode('utf8'))
                     elif (isinstance(element, bytes)
                           or element is None
-                          or isinstance(element, Number)):
+                          or isinstance(element, Number)
+                          or isinstance(element, datetime)):
                         new_entry.append(element)
                     else:
                         raise IndraDatabaseError(
                             "Don't know what to do with element of type %s."
-                            "Should be str, bytes, None, or a number." %
-                            type(element)
+                            "Should be str, bytes, datetime, None, or a "
+                            "number." % type(element)
                             )
                 data_bts.append(tuple(new_entry))
             mngr.copy(data_bts, BytesIO)

@@ -59,17 +59,11 @@ less reliable than the former ones.
 Cloning the source code from Github
 ```````````````````````````````````
 You may want to simply clone the source code without installing INDRA
-as a system-wide package. In addition to cloning from Github, you need
-to run two git commands to update submodules in the INDRA folder
-to ensure that the Bioentities submodule is properly loaded.
-This can be done as follows:
+as a system-wide package.
 
 .. code-block:: bash
 
     git clone https://github.com/sorgerlab/indra.git
-    cd indra
-    git submodule init
-    git submodule update --remote
 
 To be able to use INDRA this way, you need
 to make sure that all its requirements are installed. To be able to
@@ -107,16 +101,18 @@ framework also needs to be installed in a way that is visible to PySB.
 Detailed instructions are given in the
 `PySB documentation <http://docs.pysb.org/en/latest/installation.html#option-1-install-pysb-natively-on-your-computer>`_.
 
+.. _pyjniussetup:
 
 Pyjnius
 ```````
 To be able to use INDRA's BioPAX API and optional offline reading
-via the REACH API, an additional package called
+via the REACH and Eidos APIs, an additional package called
 `pyjnius <https://github.com/kivy/pyjnius>`_ is needed to allow using Java/Scala
-classes from Python. This is only strictly required in the BioPAX API and
+classes from Python. This is only strictly required in these input sources and
 the rest of INDRA will work without pyjnius.
 
-1. Install `JRE and JDK from Oracle <http://www.oracle.com/technetwork/java/javase/downloads/index.html>`_.
+1. Install `JRE and JDK 8 from Oracle <http://www.oracle.com/technetwork/java/javase/downloads/index.html>`_. Pyjnius is currently incompatible with Java 9, so
+make sure to get Java 8.
 
 2. On Mac, `install Legacy Java for OSX <http://support.apple.com/kb/DL1572>`_.
 If you have trouble installing it, you can try the following as an alternative.

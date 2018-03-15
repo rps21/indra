@@ -1,6 +1,7 @@
 from __future__ import absolute_import, print_function, unicode_literals
 from builtins import dict, str
 import unittest
+from nose.plugins.attrib import attr
 from indra.sources import reach
 from indra.sources.reach.processor import ReachProcessor
 from indra.util import unicode_strs
@@ -143,8 +144,8 @@ def test_be_grounding():
         assert unicode_strs(rp.statements)
         if offline == True:
             st = rp.statements[0]
-            assert(st.subj.db_refs.get('BE') == 'MEK')
-            assert(st.obj.db_refs.get('BE') == 'ERK')
+            assert(st.subj.db_refs.get('FPLX') == 'MEK')
+            assert(st.obj.db_refs.get('FPLX') == 'ERK')
 
 def test_activity():
     for offline in offline_modes:
@@ -170,7 +171,7 @@ def test_process_unicode():
         rp = reach.process_text('MEK1 binds ERK2\U0001F4A9.', offline=offline)
         assert unicode_strs(rp.statements)
 
-@unittest.skip('Taking too long on Travis')
+@attr('slow')
 def test_process_pmc():
     for offline in offline_modes:
         rp = reach.process_pmc('PMC4338247', offline=offline)

@@ -118,13 +118,14 @@ class GroundingMapper(object):
                                                      'corresponding to gene '
                                                      'symbol %s in grounding '
                                                      'map.' % hgnc_sym)
+                                map_db_refs['HGNC'] = hgnc_id
                     # Assign the DB refs from the grounding map to the agent
                     agent.db_refs = map_db_refs
                     # Are we renaming right now?
                     if do_rename:
-                        # If there's a Bioentities ID, prefer that for the name
-                        if agent.db_refs.get('BE'):
-                            agent.name = agent.db_refs.get('BE')
+                        # If there's a FamPlex ID, prefer that for the name
+                        if agent.db_refs.get('FPLX'):
+                            agent.name = agent.db_refs.get('FPLX')
                         # Get the HGNC symbol or gene name (retrieved above)
                         elif hgnc_sym is not None:
                             agent.name = hgnc_sym
@@ -146,9 +147,9 @@ class GroundingMapper(object):
                 if agent is None:
                     continue
                 old_name = agent.name
-                # If there's a Bioentities ID, prefer that for the name
-                if agent.db_refs.get('BE'):
-                    agent.name = agent.db_refs.get('BE')
+                # If there's a FamPlex ID, prefer that for the name
+                if agent.db_refs.get('FPLX'):
+                    agent.name = agent.db_refs.get('FPLX')
                 # Take a HGNC name from Uniprot next
                 elif agent.db_refs.get('UP'):
                     # Try for the gene name
@@ -287,7 +288,7 @@ def ungrounded_texts(stmts):
                   if ag is not None and ag.db_refs.keys() == ['TEXT']]
     ungroundc = Counter(ungrounded)
     ungroundc = ungroundc.items()
-    ungroundc.sort(key=lambda x: x[1], reverse=True)
+    ungroundc = sorted(ungroundc, key=lambda x: x[1], reverse=True)
     return ungroundc
 
 
@@ -369,12 +370,15 @@ def save_sentences(twg, stmts, filename, agent_limit=300):
     write_unicode_csv(filename, sentences, delimiter=',', quotechar='"',
                       quoting=csv.QUOTE_MINIMAL, lineterminator='\r\n')
 
-default_grounding_map_path = os.path.join(os.path.dirname(__file__),
-                                   '../../bioentities/grounding_map.csv')
-default_ignore_path = os.path.join(os.path.dirname(__file__),
-                                   '../../bioentities/ignore.csv')
-default_agent_grounding_path = os.path.join(os.path.dirname(__file__),
-                                   '../resources/grounding_agents.json')
+default_grounding_map_path = \
+    os.path.join(os.path.dirname(__file__),
+                 '../resources/famplex/grounding_map.csv')
+default_ignore_path = \
+    os.path.join(os.path.dirname(__file__),
+                 '../resources/famplex/ignore.csv')
+default_agent_grounding_path = \
+    os.path.join(os.path.dirname(__file__),
+                 '../resources/grounding_agents.json')
 default_grounding_map = \
     load_grounding_map(default_grounding_map_path, default_ignore_path)
 

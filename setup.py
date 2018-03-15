@@ -9,7 +9,7 @@ def main():
     # for Python 3)
     install_list = ['pysb>=1.3.0', 'objectpath', 'rdflib==4.2.1',
                     'requests>=2.11', 'lxml', 'ipython', 'future',
-                    'networkx==1.11', 'pandas']
+                    'networkx==1.11', 'pandas', 'kappy']
     if sys.version_info[0] == 2:
         install_list.append('functools32')
 
@@ -24,14 +24,21 @@ def main():
           author_email='benjamin_gyori@hms.harvard.edu',
           url='http://github.com/sorgerlab/indra',
           packages=['indra', 'indra.assemblers', 'indra.belief',
-                    'indra.benchmarks', 'indra.databases', 'indra.explanation',
+                    'indra.benchmarks', 'indra.databases', 'indra.db',
+                    'indra.explanation',
                     'indra.literature', 'indra.mechlinker',
                     'indra.preassembler', 'indra.sources', 'indra.sources.bel',
-                    'indra.sources.biopax', 'indra.sources.index_cards',
+                    'indra.sources.biopax', 'indra.sources.eidos',
+                    'indra.sources.geneways', 'indra.sources.index_cards',
                     'indra.sources.ndex_cx', 'indra.sources.reach',
-                    'indra.sources.sparser', 'indra.sources.trips',
-                    'indra.resources', 'indra.tests',
-                    'indra.tools', 'indra.tools.reading', 'indra.util'],
+                    'indra.sources.sparser', 'indra.sources.tees',
+                    'indra.sources.trips', 'indra.resources', 'indra.tests',
+                    'indra.tools', 'indra.tools.reading',
+                    'indra.tools.reading.db_reading',
+                    'indra.tools.reading.pmid_reading',
+                    'indra.tools.reading.starcluster_reading',
+                    'indra.tools.reading.util',
+                    'indra.tools.machine', 'indra.util'],
           install_requires=install_list,
           tests_require=['jnius-indra', 'jsonschema', 'coverage', 'matplotlib'],
           include_package_data=True,
@@ -49,9 +56,11 @@ def main():
             'Topic :: Scientific/Engineering :: Chemistry',
             'Topic :: Scientific/Engineering :: Mathematics',
             ],
-          extras_require={'machine': ['pytz', 'tzlocal', 'tweepy', 'ndex',
-                                      'pyyaml', 'click']},
-          entry_points={'console_scripts': ['indra-machine = indra.tools.machine.cli:main']}
+          extras_require={'machine': ['pytz', 'tzlocal', 'tweepy', 'ndex2',
+                                      'pyyaml', 'click'],
+                          'bbn': ['rdflib-jsonld']},
+          entry_points={'console_scripts':
+                        ['indra-machine = indra.tools.machine.cli:main']}
         )
 
 
