@@ -5,7 +5,7 @@ import uuid
 import logging
 import networkx
 import itertools
-from copy import deepcopy
+from indra.util import fast_deepcopy
 from indra.statements import *
 from indra.preassembler.hierarchy_manager import hierarchies
 
@@ -59,9 +59,11 @@ class MechLinker(object):
                 agent_base = self._get_base(stmt.agent)
                 agent_base.add_activity(stmt.activity)
                 if stmt.is_active:
-                    agent_base.add_active_state(stmt.activity, stmt.agent)
+                    agent_base.add_active_state(stmt.activity, stmt.agent,
+                                                stmt.evidence)
                 else:
-                    agent_base.add_inactive_state(stmt.activity, stmt.agent)
+                    agent_base.add_inactive_state(stmt.activity, stmt.agent,
+                                                  stmt.evidence)
 
     def gather_implicit_activities(self):
         """Aggregate all implicit activities and active forms of Agents.
@@ -85,8 +87,7 @@ class MechLinker(object):
                 if stmt.enz is not None:
                     enz_base = self._get_base(stmt.enz)
                     enz_base.add_activity('kinase')
-#                    enz_base.add_active_state('kinase', stmt.enz.mods)
-                    enz_base.add_active_state('kinase', stmt.enz)
+                    enz_base.add_active_state('kinase', stmt.enz.mods)
             elif isinstance(stmt, Dephosphorylation):
                 if stmt.enz is not None:
                     enz_base = self._get_base(stmt.enz)
@@ -96,8 +97,7 @@ class MechLinker(object):
                 if stmt.enz is not None:
                     enz_base = self._get_base(stmt.enz)
                     enz_base.add_activity('catalytic')
-#                    enz_base.add_active_state('catalytic', stmt.enz.mods)
-                    enz_base.add_active_state('catalytic', stmt.enz)
+                    enz_base.add_active_state('catalytic', stmt.enz.mods)
             elif isinstance(stmt, SelfModification):
                 if stmt.enz is not None:
                     enz_base = self._get_base(stmt.enz)
@@ -180,6 +180,8 @@ class MechLinker(object):
             This list is also set as the internal Statement list of the
             MechLinker.
         """
+        logger.info('Setting required active forms on %d statements...' %
+                    len(self.statements))
         new_stmts = []
         for stmt in self.statements:
             if isinstance(stmt, Modification):
@@ -192,9 +194,10 @@ class MechLinker(object):
                     new_stmts.append(stmt)
                 else:
                     for af in active_forms:
-                        new_stmt = deepcopy(stmt)
+                        new_stmt = fast_deepcopy(stmt)
                         new_stmt.uuid = str(uuid.uuid4())
-                        af.apply_to(new_stmt.enz)
+                        evs = af.apply_to(new_stmt.enz)
+                        new_stmt.partial_evidence = evs
                         new_stmts.append(new_stmt)
             elif isinstance(stmt, RegulateAmount) or \
                 isinstance(stmt, RegulateActivity):
@@ -207,98 +210,15 @@ class MechLinker(object):
                     new_stmts.append(stmt)
                 else:
                     for af in active_forms:
-                        new_stmt = deepcopy(stmt)
+                        new_stmt = fast_deepcopy(stmt)
                         new_stmt.uuid = str(uuid.uuid4())
-                        af.apply_to(new_stmt.subj)
+                        evs = af.apply_to(new_stmt.subj)
+                        new_stmt.partial_evidence = evs
                         new_stmts.append(new_stmt)
             else:
                 new_stmts.append(stmt)
         self.statements = new_stmts
         return new_stmts
-
-    def require_active_forms_complex(self,agent_list,upstream_list):
-        new_stmts = []
-        for stmt in self.statements:
-            binding_ag_index = []
-            if isinstance(stmt, Complex):
-                match=0
-                for ag in stmt.agent_list():
-                    if any(list(map(lambda obj: obj.entity_matches(ag), upstream_list))): 
-                        match = 0
-                        break
-                    for ag2 in agent_list:
-                        if ag.entity_matches(ag2):
-                                match = 1
-                                binding_ag = ag2
-                                print('ag to add context is %s' % binding_ag)
-#                                binding_ag_index = stmt.agent_list().index(ag)
-                                binding_ag_index.append(stmt.agent_list().index(ag))
-                if match == 0: 
-                    new_stmts.append(stmt)
-                    continue
-                ag_base = self._get_base(binding_ag) 
-                active_forms = ag_base.get_active_forms()
-                print('ag_base is %s' % ag_base)
-                print('type of ag_base is %s' % type(ag_base))
-                print('base afs are %s' % active_forms)
-                print('type of base afs is %s' % type(active_forms))
-                if not active_forms:
-                    new_stmts.append(stmt)
-                else:
-                    for af in active_forms:
-                        new_stmt = deepcopy(stmt)
-                        print('base stmt to modify is %s' % new_stmt)
-                        new_stmt.uuid = str(uuid.uuid4())
-#                        af.apply_to(new_stmt.enz)  #Need clean way to refer to appropriate agent in stmt. 
-                        for ind in binding_ag_index:
-#                        af.apply_to(new_stmt.agent_list()[binding_ag_index])  #Need clean way to refer to appropriate agent in stmt. 
-                            af.apply_to(new_stmt.agent_list()[ind])  #Need clean way to refer to appropriate agent in stmt. 
-                        new_stmts.append(new_stmt)    
-            else:
-                new_stmts.append(stmt)
-        self.statements = new_stmts
-        return new_stmts
-#################################3
-
-#    def require_active_forms_translocation(self,agent_list,upstream_list):
-#        new_stmts = []
-#        for stmt in self.statements:
-#            binding_ag_index = []
-#            if isinstance(stmt, Translocation):
-#                match=0
-#                ag = st.agent
-#                if any(list(map(lambda obj: obj.entity_matches(ag), upstream_list))): 
-#                    match = 0
-#                    break
-#                for ag2 in agent_list:
-#                    if ag.entity_matches(ag2):
-#                        match = 1
-#                        binding_ag = ag2
-##                                binding_ag_index = stmt.agent_list().index(ag)
-#                        binding_ag_index.append(stmt.agent_list().index(ag))
-#                if match == 0: 
-#                    new_stmts.append(stmt)
-#                    continue
-#                ag_base = self._get_base(binding_ag) 
-#                active_forms = ag_base.get_active_forms()
-#                if not active_forms:
-#                    new_stmts.append(stmt)
-#                else:
-#                    for af in active_forms:
-#                        new_stmt = deepcopy(stmt)
-#                        new_stmt.uuid = str(uuid.uuid4())
-##                        af.apply_to(new_stmt.enz)  #Need clean way to refer to appropriate agent in stmt. 
-#                        for ind in binding_ag_index:
-##                        af.apply_to(new_stmt.agent_list()[binding_ag_index])  #Need clean way to refer to appropriate agent in stmt. 
-#                            af.apply_to(new_stmt.agent_list()[ind])  #Need clean way to refer to appropriate agent in stmt. 
-#                        new_stmts.append(new_stmt)    
-#            else:
-#                new_stmts.append(stmt)
-#        self.statements = new_stmts
-#        return new_stmts
-
-####################################3
-
 
     def reduce_activities(self):
         """Rewrite the activity types referenced in Statements for consistency.
@@ -684,11 +604,9 @@ class BaseAgent(object):
     def _make_activity_graph(self):
         self.activity_graph = networkx.DiGraph()
         for a1, a2 in itertools.combinations(self.activity_types, 2):
-            if hierarchies['activity'].isa('INDRA_ACTIVITIES', a1,
-                                           'INDRA_ACTIVITIES', a2):
+            if hierarchies['activity'].isa('INDRA', a1, 'INDRA', a2):
                 self.activity_graph.add_edge(a2, a1)
-            if hierarchies['activity'].isa('INDRA_ACTIVITIES', a2,
-                                           'INDRA_ACTIVITIES', a1):
+            if hierarchies['activity'].isa('INDRA', a2, 'INDRA', a1):
                 self.activity_graph.add_edge(a1, a2)
 
     def get_modification_reduction(self, mc):
@@ -718,15 +636,15 @@ class BaseAgent(object):
         if activity_type not in self.activity_types:
             self.activity_types.append(activity_type)
 
-    def add_active_state(self, activity_type, agent):
-        agent_state = AgentState(agent)
+    def add_active_state(self, activity_type, agent, evidence):
+        agent_state = AgentState(agent, evidence)
         if activity_type in self.active_states:
             self.active_states[activity_type].append(agent_state)
         else:
             self.active_states[activity_type] = [agent_state]
 
-    def add_inactive_state(self, activity_type, agent):
-        agent_state = AgentState(agent)
+    def add_inactive_state(self, activity_type, agent, evidence):
+        agent_state = AgentState(agent, evidence)
         if activity_type in self.inactive_states:
             self.inactive_states[activity_type].append(agent_state)
         else:
@@ -783,11 +701,12 @@ class AgentState(object):
     mutations : list[indra.statements.Mutation]
     location : indra.statements.location
     """
-    def __init__(self, agent):
+    def __init__(self, agent, evidence=None):
         self.bound_conditions = agent.bound_conditions
         self.mods = agent.mods
         self.mutations = agent.mutations
         self.location = agent.location
+        self.evidence = evidence or []
 
     def apply_to(self, agent):
         """Apply this object's state to an Agent.
@@ -801,6 +720,7 @@ class AgentState(object):
         agent.mods = self.mods
         agent.mutations = self.mutations
         agent.location = self.location
+        return self.evidence
 
     def __repr__(self):
         s = 'AgentState(%s, %s, %s, %s)' % (self.bound_conditions, self.mods,
