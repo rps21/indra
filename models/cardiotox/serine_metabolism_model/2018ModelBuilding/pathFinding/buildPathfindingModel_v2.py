@@ -8,6 +8,8 @@ from indra.sources import signor
 from indra.sources import biopax
 from indra.sources import trips
 from indra.tools.gene_network import GeneNetwork
+from indra.preassembler import Preassembler
+
 
 def normalize_active_forms(stmts):
     af_stmts = ac.filter_by_type(stmts, ActiveForm)
@@ -59,28 +61,29 @@ def build_prior(gene_names):
     return biopax_stmts
 
 biopax_stmts = build_prior(model_genes)
+ac.dump_statements(biopax_stmts,'model_stmts/biopax_output.pkl')
 trips_stmts = ac.load_statements('model_stmts/trips_output.pkl')
 
 sp = signor.SignorProcessor()
 signorStmts = sp.statements
-filteredSignorStmts = ac.filter_gene_list(signorStmts, model_genes, policy='one',save='signor_stmts_list.pkl')
+#filteredSignorStmts = ac.filter_gene_list(signorStmts, model_genes, policy='one',save='signor_stmts_list.pkl')
+filteredSignorStmts = ac.load_statements('model_stmts/signor_stmts_list.pkl')
+
 
 #raw_stmts = ac.load_statements('heart_reading_stmts.pkl')
 #stmts = ac.filter_no_hypothesis(raw_stmts)
 #stmts = ac.filter_gene_list(stmts, model_genes, policy='one',
 #                            save='filter_gene_list.pkl')
 
-
-
-reach_stmts = ac.load_statements('filter_gene_list.pkl')
+reach_stmts = ac.load_statements('model_stmts/filter_gene_list.pkl')
 stmts = reach_stmts + biopax_stmts + trips_stmts + filteredSignorStmts
 
 def cleanStatements(stmts):
     stmts = ac.map_grounding(stmts)
-    stmts = ac.filter_grounded_only(stmts, save='grounded.pkl')
+    stmts = ac.filter_grounded_only(stmts, save='intermediateStmts/grounded.pkl')
     stmts = ac.filter_genes_only(stmts)
     stmts = ac.filter_human_only(stmts)
-    stmts = ac.run_preassembly(stmts, save='preassembled.pkl')
+    stmts = ac.run_preassembly(stmts, save='intermediateStmts/preassembled.pkl')
     stmts = ac.filter_belief(stmts, 0.90)
     stmts = ac.filter_top_level(stmts)
     stmts = ac.filter_enzyme_kinase(stmts)
@@ -119,14 +122,47 @@ largeModelStmts = cleanStatements(stmts)
 smallModelRawStmts = ac.filter_gene_list(stmts,model_genes,'all')
 smallModelStmts = cleanStatements(smallModelRawStmts)
 
+
+
+
+#Coarse grain phos and add binding context, interpretting as activationsfrom indra.tools.small_model_tools import enforceCascadeContext as cs
+from indra.tools.small_model_tools import enforceCascadeContext as cs
+from indra.tools.small_model_tools import combinePhosphorylationSites as ptm
+
+#newstmts, uplist, downlist = cs.add_all_af(largeModelStmts)     
+#newstmts = cs.run_mechlinker_step_reduced(newstmts, uplist, downlist)
+#largeModelStmts_contextChanges = ptm.coarse_grain_phos(newstmts)
+
+newstmts, uplist, downlist = cs.add_all_af(smallModelStmts)     
+smallModelStmts_contextChanges = cs.run_mechlinker_step_reduced(newstmts, uplist, downlist)
+smallModelStmts_contextChanges = ptm.coarse_grain_phos(newstmts)
+
+
+#Add statements for Sorafenib Targets
 drugTargetStmts = ac.load_statements('sorafenibTargetStmts.pkl')
 largeModelStmts = largeModelStmts + drugTargetStmts
+#largeModelStmts_contextChanges = largeModelStmts_contextChanges + drugTargetStmts
 smallModelStmts = smallModelStmts + drugTargetStmts
+smallModelStmts_contextChanges = smallModelStmts_contextChanges + drugTargetStmts
 
+
+largeModelStmts = Preassembler.combine_duplicate_stmts(largeModelStmts)
+#largeModelStmts_contextChanges = Preassembler.combine_duplicate_stmts(largeModelStmts_contextChanges)
+#largeModelStmts_contextChanges = ac.filter_inconsequential_mods(largeModelStmts_contextChanges)
+
+smallModelStmts = Preassembler.combine_duplicate_stmts(smallModelStmts)
+smallModelStmts_contextChanges = Preassembler.combine_duplicate_stmts(smallModelStmts_contextChanges)
+smallModelStmts_contextChanges = ac.filter_inconsequential_mods(smallModelStmts_contextChanges)
+
+
+
+#Save four final statment lists
 ac.dump_statements(largeModelStmts,'finalLargeModelStmts.pkl')
 ac.dump_statements(smallModelStmts,'finalSmallModelStmts.pkl')
+#ac.dump_statements(largeModelStmts,'largeModelStmts_contextChanges.pkl')
+ac.dump_statements(smallModelStmts_contextChanges,'smallModelStmts_contextChanges.pkl')
 
-
+#Assemble and save four PySB models
 pa = PysbAssembler()
 pa.add_statements(largeModelStmts)
 largeModel = pa.make_model()
@@ -138,4 +174,16 @@ pa.add_statements(smallModelStmts)
 smallModel = pa.make_model()
 with open('smallPYSBModel.pkl','wb') as f:
     pickle.dump(smallModel,f)
+
+#pa = PysbAssembler()
+#pa.add_statements(largeModelStmts_contextChanges)
+#largeModel = pa.make_model()
+#with open('largePYSBModel_contextChanges.pkl','wb') as f:
+#    pickle.dump(largeModel,f)
+
+pa = PysbAssembler()
+pa.add_statements(smallModelStmts_contextChanges)
+smallModelContext = pa.make_model()
+with open('smallPYSBModel_contextChanges.pkl','wb') as f:
+    pickle.dump(smallModelContext,f)
 
