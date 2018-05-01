@@ -1,16 +1,17 @@
 import rdflib
 import logging
 import collections
-from indra.statements import Agent, Influence, Evidence
+from indra.statements import Concept, Influence, Evidence
 
 
 logger = logging.getLogger('bbn')
 
 
 prefixes = """
-    PREFIX causal: <http://worldmodelers.com/CauseEffect#>
+    PREFIX causal: <http://www.bbn.com/worldmodelers/ontology/wm/CauseEffect#>
+    PREFIX ev: <http://www.bbn.com/worldmodelers/ontology/wm/Event#>
+    PREFIX prov: <http://www.bbn.com/worldmodelers/ontology/wm/DataProvenance#>
     PREFIX cco: <http://www.ontologyrepository.com/CommonCoreOntologies/>
-    PREFIX ev: <http://worldmodelers.com/Event#>
     """
 
 
@@ -42,16 +43,20 @@ class BBNProcessor(object):
                 ?evtext
                 ?cause_polarity
                 ?effect_polarity
+                ?cause_type
+                ?effect_type
             WHERE {
                 ?rel a causal:CausalAssertion .
                 ?rel causal:has_cause ?cause .
                 ?rel causal:has_effect ?effect .
-                ?rel cco:has_text_value ?evtext .
-                ?cause cco:has_text_value ?causetext .
-                ?effect cco:has_text_value ?effecttext .
+                ?rel prov:has_text_value ?evtext .
+                ?cause prov:has_text_value ?causetext .
+                ?effect prov:has_text_value ?effecttext .
                 OPTIONAL
                     {?cause ev:has_polarity ?cause_polarity .
-                    ?effect ev:has_polarity ?effect_polarity .}
+                    ?effect ev:has_polarity ?effect_polarity .
+                    ?cause a ?cause_type .
+                    ?effect a ?effect_type .}
                 }
             """
         # Run the query
@@ -64,7 +69,7 @@ class BBNProcessor(object):
         # snippet).
         rdict = collections.defaultdict(CauseEffect)
         for rel, cause_text, effect_text, evtext, cause_polarity, \
-                effect_polarity in res:
+                effect_polarity, cause_type, effect_type in res:
             relid = shorter_name(rel)
 
             rdict[relid].cause_texts.add(cause_text)
@@ -75,6 +80,10 @@ class BBNProcessor(object):
                 rdict[relid].cause_polarity = shorter_name(cause_polarity)
             if effect_polarity is not None:
                 rdict[relid].effect_polarity = shorter_name(effect_polarity)
+            if cause_type is not None:
+                rdict[relid].cause_type = shorter_name(cause_type)
+            if effect_type is not None:
+                rdict[relid].effect_type = shorter_name(effect_type)
         not_positive = 0
         for relid, ces in rdict.items():
             statement = ces.to_statement()
@@ -82,7 +91,8 @@ class BBNProcessor(object):
                 not_positive = not_positive + 1
             else:
                 self.statements.append(statement)
-        print('%d statements skipped because of polarity' % not_positive)
+        if not_positive > 0:
+            print('%d statements skipped because of polarity' % not_positive)
 
 
 class CauseEffect(object):
@@ -97,6 +107,14 @@ class CauseEffect(object):
         A list of effects, in text
     evidence_texts: list<str>
         A list of evidence texts
+    cause_polarity: str
+        Polarity of the cause (no statement generated if not Positive)
+    effect_polarity: str
+        Polarity of the effect (no statement generated if not Positive)
+    cause_type: str
+        The type of cause
+    effect_type: str
+        The type of effect
     """
 
     def __init__(self):
@@ -107,6 +125,8 @@ class CauseEffect(object):
         self.evidence_texts = set()
         self.cause_polarity = None
         self.effect_polarity = None
+        self.cause_type = None
+        self.effect_type = None
 
     def __repr__(self):
         """Convert to string representation, suitable for debugging."""
@@ -145,7 +165,19 @@ class CauseEffect(object):
         cause_text = str(cause_text)
         effect_text = str(effect_text)
 
-        return Influence(Agent(cause_text), Agent(effect_text), evidence=ev)
+        # Make cause concept
+        cause_db_refs = {'TEXT': cause_text}
+        if self.cause_type is not None:
+            cause_db_refs['BBN'] = self.cause_type
+        cause_concept = Concept(cause_text, db_refs=cause_db_refs)
+
+        # Make effect concept
+        effect_db_refs = {'TEXT': effect_text}
+        if self.effect_type is not None:
+            effect_db_refs['BBN'] = self.effect_type
+        effect_concept = Concept(effect_text, db_refs=effect_db_refs)
+
+        return Influence(cause_concept, effect_concept, evidence=ev)
 
 
 def shortest_string_in_list(string_list):

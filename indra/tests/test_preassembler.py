@@ -3,12 +3,14 @@ from builtins import dict, str
 import os
 from indra.preassembler import Preassembler, render_stmt_graph, \
                                flatten_evidence, flatten_stmts
+from indra.preassembler.hierarchy_manager import HierarchyManager
 from indra.sources import trips
 from indra.statements import Agent, Phosphorylation, BoundCondition, \
                              Dephosphorylation, Evidence, ModCondition, \
                              ActiveForm, MutCondition, Complex, \
                              Translocation, Activation, Inhibition, \
-                             Deacetylation, Conversion
+                             Deacetylation, Conversion, Concept, Influence, \
+                             IncreaseAmount, DecreaseAmount
 from indra.preassembler.hierarchy_manager import hierarchies
 
 def test_duplicates():
@@ -121,6 +123,23 @@ def test_superfamily_refinement():
     assert (stmts[0].equals(st2))
     assert (len(stmts[0].supported_by) == 1)
     assert (stmts[0].supported_by[0].equals(st1))
+
+
+def test_superfamily_refinement_isa_or_partof():
+    src = Agent('SRC', db_refs = {'HGNC': '11283'})
+    prkag1 = Agent('PRKAG1', db_refs = {'HGNC': '9385'})
+    ampk = Agent('AMPK', db_refs = {'FPLX': 'AMPK'})
+    st1 = Phosphorylation(src, ampk, 'tyrosine', '32')
+    st2 = Phosphorylation(src, prkag1, 'tyrosine', '32')
+    pa = Preassembler(hierarchies, stmts=[st1, st2])
+    stmts = pa.combine_related()
+    # The top-level list should contain only one statement, the gene-level
+    # one, supported by the family one.
+    assert(len(stmts) == 1)
+    assert (stmts[0].equals(st2))
+    assert (len(stmts[0].supported_by) == 1)
+    assert (stmts[0].supported_by[0].equals(st1))
+
 
 def test_modification_refinement():
     """A more specific modification statement should be supported by a more
@@ -546,4 +565,61 @@ def test_conversion_refinement():
     pa = Preassembler(hierarchies, stmts=[st1, st2, st3, st4])
     toplevel_stmts = pa.combine_related()
     assert(len(toplevel_stmts) == 2)
-    
+
+
+def test_influence_duplicate():
+    gov = 'entities/human/nation/government'
+    agr = 'entities/human/livelihood/agriculture'
+    cgov = Concept('government', db_refs={'EIDOS': [(gov, 1.0)]})
+    cagr = Concept('agriculture', db_refs={'EIDOS': [(agr, 1.0)]})
+    stmt1 = Influence(cgov, cagr, evidence=[Evidence(source_api='eidos1')])
+    stmt2 = Influence(cagr, cgov, evidence=[Evidence(source_api='eidos2')])
+    stmt3 = Influence(cgov, cagr, evidence=[Evidence(source_api='eidos3')])
+    eidos_ont = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             '../sources/eidos/eidos_ontology.rdf')
+    hm = HierarchyManager(eidos_ont, True, True)
+    hierarchies = {'entity': hm}
+    pa = Preassembler(hierarchies, [stmt1, stmt2, stmt3])
+    unique_stmts = pa.combine_duplicates()
+    assert len(unique_stmts) == 2
+    assert len(unique_stmts[0].evidence) == 1
+    assert len(unique_stmts[1].evidence) == 2
+    sources = [e.source_api for e in unique_stmts[1].evidence]
+    assert set(sources) == set(['eidos1', 'eidos3'])
+
+
+def test_influence_refinement():
+    tran = 'entities/human/infrastructure/transportation'
+    truck = 'entities/human/infrastructure/transportation/' + \
+        'transportation_methods/trucking'
+    agr = 'entities/human/livelihood/agriculture'
+    ctran = Concept('transportation', db_refs={'EIDOS': [(tran, 1.0)]})
+    ctruck = Concept('trucking', db_refs={'EIDOS': [(truck, 1.0)]})
+    cagr = Concept('agriculture', db_refs={'EIDOS': [(agr, 1.0)]})
+    stmt1 = Influence(ctran, cagr, evidence=[Evidence(source_api='eidos1')])
+    stmt2 = Influence(ctruck, cagr, evidence=[Evidence(source_api='eidos2')])
+    stmt3 = Influence(cagr, ctran, evidence=[Evidence(source_api='eidos3')])
+    eidos_ont = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             '../sources/eidos/eidos_ontology.rdf')
+    hm = HierarchyManager(eidos_ont, True, True)
+    hierarchies = {'entity': hm}
+    pa = Preassembler(hierarchies, [stmt1, stmt2, stmt3])
+    rel_stmts = pa.combine_related()
+    assert len(rel_stmts) == 2
+    truck_stmt = [st for st in rel_stmts if st.subj.name == 'trucking'][0]
+    assert len(truck_stmt.supported_by) == 1
+    assert truck_stmt.supported_by[0].subj.name == 'transportation'
+
+
+def test_find_contradicts():
+    st1 = Inhibition(Agent('a'), Agent('b'))
+    st2 = Activation(Agent('a'), Agent('b'))
+    st3 = IncreaseAmount(Agent('a'), Agent('b'))
+    st4 = DecreaseAmount(Agent('a'), Agent('b'))
+    pa = Preassembler(hierarchies, [st1, st2, st3, st4])
+    contradicts = pa.find_contradicts()
+    assert len(contradicts) == 2
+    for s1, s2 in contradicts:
+        assert {s1.uuid, s2.uuid} in ({st1.uuid, st2.uuid},
+                                      {st3.uuid, st4.uuid})
+

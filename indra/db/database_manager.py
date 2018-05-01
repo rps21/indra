@@ -1,5 +1,6 @@
 from __future__ import absolute_import, print_function, unicode_literals
 from builtins import dict, str
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 __all__ = ['sqltypes', 'texttypes', 'formats', 'DatabaseManager',
            'IndraDatabaseError', 'sql_expressions']
@@ -232,6 +233,16 @@ class DatabaseManager(object):
                     ),
                 )
 
+        class ReadingUpdates(self.Base):
+            __tablename__ = 'reading_updates'
+            id = Column(Integer, primary_key=True)
+            complete_read = Column(Boolean, nullable=False)
+            reader = Column(String(250), nullable=False)
+            reader_version = Column(String(250), nullable=False)
+            run_datetime = Column(DateTime, default=func.now())
+            earliest_datetime = Column(DateTime)
+            latest_datetime = Column(DateTime, nullable=False)
+
         class DBInfo(self.Base):
             __tablename__ = 'db_info'
             id = Column(Integer, primary_key=True)
@@ -263,9 +274,30 @@ class DatabaseManager(object):
             db_id = Column(String, nullable=False)
             role = Column(String(20), nullable=False)
 
+        class PAStatements(self.Base):
+            __tablename__ = 'pa_statements'
+            id = Column(Integer, primary_key=True)
+            uuid = Column(String(40), unique=True, nullable=False)
+            type = Column(String(100), nullable=False)
+            indra_version = Column(String(100), nullable=False)
+            json = Column(Bytea, nullable=False)
+            create_date = Column(DateTime, default=func.now())
+
+        class PAAgents(self.Base):
+            __tablename__ = 'pa_agents'
+            id = Column(Integer, primary_key=True)
+            stmt_id = Column(Integer,
+                             ForeignKey('pa_statements.id'),
+                             nullable=False)
+            statements = relationship(PAStatements)
+            db_name = Column(String(40), nullable=False)
+            db_id = Column(String, nullable=False)
+            role = Column(String(20), nullable=False)
+
         self.tables = {}
         for tbl in [TextRef, TextContent, Readings, SourceFile, Updates,
-                    DBInfo, Statements, Agents]:
+                    DBInfo, Statements, Agents, PAStatements, PAAgents,
+                    ReadingUpdates]:
             self.tables[tbl.__tablename__] = tbl
             self.__setattr__(tbl.__name__, tbl)
         self.engine = create_engine(host)
@@ -291,7 +323,9 @@ class DatabaseManager(object):
                 else:
                     tbl_name_list.append(tbl.__tablename__)
             # These tables must be created in this order.
-            for tbl_name in ['text_ref', 'text_content', 'readings', 'db_info', 'statements', 'agents']:
+            for tbl_name in ['text_ref', 'text_content', 'readings', 'db_info',
+                             'statements', 'agents', 'pa_statements',
+                             'pa_agents']:
                 if tbl_name in tbl_name_list:
                     tbl_name_list.remove(tbl_name)
                     logger.debug("Creating %s..." % tbl_name)
@@ -524,8 +558,10 @@ class DatabaseManager(object):
     def filter_query(self, tbls, *args):
         "Query a table and filter results."
         self.grab_session()
+        ok_classes = [type(self.Base), InstrumentedAttribute]
         if _isiterable(tbls) and not isinstance(tbls, dict):
-            if isinstance(tbls[0], type(self.Base)):
+            if all([any([isinstance(tbl, ok_class) for ok_class in ok_classes])
+                    for tbl in tbls]):
                 query_args = tbls
             elif isinstance(tbls[0], str):
                 query_args = [self.tables[tbl] for tbl in tbls]
@@ -535,7 +571,7 @@ class DatabaseManager(object):
                     type(tbls[0])
                     )
         else:
-            if isinstance(tbls, type(self.Base)):
+            if any([isinstance(tbls, ok_class) for ok_class in ok_classes]):
                 query_args = [tbls]
             elif isinstance(tbls, str):
                 query_args = [self.tables[tbls]]

@@ -1,6 +1,8 @@
 from __future__ import print_function, unicode_literals
 import logging
-__version__ = '1.6.0'
+import os
+import sys
+__version__ = '1.7.0'
 
 __all__ = ['assemblers', 'belief', 'databases', 'explanation', 'literature',
            'mechlinker', 'preassembler', 'sources', 'tools', 'util']
@@ -22,3 +24,7 @@ class Lib2to3LoggingModuleShim(object):
         return logging.getLogger('lib2to3')
 lib2to3.pgen2.driver.logging = Lib2to3LoggingModuleShim()
 logging.getLogger('lib2to3').setLevel(logging.ERROR)
+
+logger = logging.getLogger('indra')
+
+from .config import get_config, has_config

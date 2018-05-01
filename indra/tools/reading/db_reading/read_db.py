@@ -6,12 +6,10 @@ from __future__ import absolute_import, print_function, unicode_literals
 from builtins import dict, str
 import logging
 import random
-import zlib
 import pickle
-import json
 from math import log10, floor, ceil
 from datetime import datetime
-from indra.tools.reading.util.script_tools import get_parser, make_statements, \
+from indra.tools.reading.util.script_tools import get_parser, make_statements,\
                                              StatementData
 
 logger = logging.getLogger('make_db_readings')
@@ -26,7 +24,7 @@ if __name__ == '__main__':
         )
     parser.add_argument(
         '-m', '--mode',
-        choices=['all', 'unread', 'none'],
+        choices=['all', 'unread-all', 'unread-unread', 'none'],
         default='unread',
         help=('Set the reading mode. If \'all\', read everything, if '
               '\'unread\', only read content that does not have pre-existing '
@@ -81,6 +79,23 @@ if __name__ == '__main__':
         help='Make the reader only read full text from the database.',
         action='store_true'
         )
+    parser.add_argument(
+        '--use_best_fulltext',
+        help='Use only the best full text available.',
+        action='store_true'
+        )
+    parser.add_argumet(
+        '--max_reach_space_ratio',
+        type=float,
+        help='Set the maximum ratio of spaces to non-spaces for REACH input.',
+        default=None
+    )
+    parser.add_argument(
+        '--max_reach_input_len',
+        type=int,
+        help='Set the maximum length of content that REACH will read.',
+        default=None
+    )
     args = parser.parse_args()
     if args.debug and not args.quiet:
         logger.setLevel(logging.DEBUG)
@@ -88,7 +103,7 @@ if __name__ == '__main__':
 from indra.db import get_primary_db, formats, texttypes
 from indra.db import sql_expressions as sql
 from indra.db.util import insert_agents
-from indra.tools.reading.readers import get_readers, ReadingData, _get_dir
+from indra.tools.reading.readers import ReadingData, _get_dir, get_reader
 
 
 class ReadDBError(Exception):
@@ -153,6 +168,41 @@ def get_id_dict(id_str_list):
     return id_dict
 
 
+def get_priority_tcids(id_dict, priorities, always_add=None, db=None):
+    """For all ids, besides tcids, choose best content available.
+
+    This function will convert all ids to tcids.
+    """
+    if db is None:
+        db = get_primary_db()
+
+    def is_better(new, old):
+        if new in priorities and old in priorities:
+            return priorities.index(new) < priorities.index(old)
+        return False
+
+    logger.debug("Getting content prioritized by %s." % str(priorities))
+    tcids = set(id_dict.pop('tcid', []))
+    clauses = get_clauses(id_dict, db)
+    tcid_source = set()
+    for clause in clauses:
+        q = (db.session.query(db.TextRef.id, db.TextContent.id,
+                              db.TextContent.source)
+             .filter(db.TextContent.text_ref_id == db.TextRef.id, clause))
+        id_set = set(q.all())
+        logger.debug("Got %d more ids." % len(id_set))
+        tcid_source |= id_set
+    logger.debug("Got %d id's total." % len(tcid_source))
+    tr_best = {}
+    for trid, tcid, source in tcid_source:
+        if trid not in tr_best.keys() or is_better(source, tr_best[trid][0]):
+            tr_best[trid] = (source, tcid)
+        if always_add is not None and source in always_add:
+            tcids.add(tcid)
+    tcids |= {tcid for _, tcid in tr_best.values()}
+    return tcids
+
+
 def get_clauses(id_dict, db):
     """Get a list of clauses to be passed to a db query.
 
@@ -180,14 +230,17 @@ def get_clauses(id_dict, db):
         `db.filter_query(<table>, <other clauses>, *clause_list)`.
         If the id_dict has no ids, an effectively empty condition is returned.
     """
+    # Handle all id types besides text ref ids (trid) and text content ids (tcid).
     id_condition_list = [getattr(db.TextRef, id_type).in_(id_list)
                          for id_type, id_list in id_dict.items()
                          if len(id_list) and id_type not in ['tcid', 'trid']]
+
+    # Handle the special id types trid and tcid.
     for id_type, table in [('trid', db.TextRef), ('tcid', db.TextContent)]:
         if id_type in id_dict.keys() and len(id_dict[id_type]):
             int_id_list = [int(i) for i in id_dict[id_type]]
             id_condition_list.append(table.id.in_(int_id_list))
-    return [sql.or_(*id_condition_list)]
+    return id_condition_list
 
 
 def get_text_content_summary_string(q, db, num_ids=None):
@@ -281,7 +334,11 @@ def get_content_query(ids, readers, db=None, force_fulltext=False,
     # If we are actually getting anything, else we return None.
     if ids == 'all' or any([len(id_list) > 0 for id_list in ids.values()]):
         if ids is not 'all':
-            clauses += get_clauses(ids, db)
+            sub_clauses = get_clauses(ids, db)
+            if len(sub_clauses) > 1:
+                clauses.append(sql.or_(*sub_clauses))
+            else:
+                clauses.append(*sub_clauses)
 
         # Get the text content query object
         tc_query = db.filter_query(
@@ -361,7 +418,11 @@ def get_readings_query(ids, readers, db=None, force_fulltext=False):
 
     if ids == 'all' or any([id_list for id_list in ids.values()]):
         if ids != 'all':
-            clauses += get_clauses(ids, db)
+            sub_clauses = get_clauses(ids, db)
+            if len(sub_clauses) > 1:
+                clauses.append(sql.or_(*sub_clauses))
+            else:
+                clauses.append(*sub_clauses)
 
         readings_query = db.filter_query(
             db.Readings,
@@ -494,15 +555,7 @@ def get_db_readings(id_dict, readers, force_fulltext=False, batch_size=1000,
         )
     if previous_readings_query is not None:
         prev_readings = [
-            ReadingData(
-                r.text_content_id,
-                r.reader,
-                r.reader_version,
-                r.format,
-                json.loads(zlib.decompress(r.bytes, 16+zlib.MAX_WBITS)
-                           .decode('utf8')),
-                r.id
-                )
+            ReadingData.from_db_reading(r)
             for r in previous_readings_query.yield_per(batch_size)
             ]
     else:
@@ -542,9 +595,10 @@ def upload_readings(output_list, db=None):
     return
 
 
-def produce_readings(id_dict, reader_list, verbose=False, read_mode='unread',
-                     force_fulltext=False, batch_size=1000, no_upload=False,
-                     pickle_file=None, db=None, log_readers=True):
+def produce_readings(id_dict, reader_list, verbose=False,
+                     read_mode='unread-all', force_fulltext=False,
+                     batch_size=1000, no_upload=False, pickle_file=None,
+                     db=None, log_readers=True, prioritize=False):
     """Produce the reading output for the given ids, and upload them to db.
 
     This function will also retrieve pre-existing readings from the database,
@@ -559,11 +613,13 @@ def produce_readings(id_dict, reader_list, verbose=False, read_mode='unread',
     verbose : bool
         Optional, default False - If True, log and print the output of the
         commandline reader utilities, if False, don't.
-    read_mode : str : 'all', 'unread', or 'none'
-        Optional, default 'undread' - If 'all', read everything (generally
-        slow); if 'unread', only read things that were undread (as fast as you
-        can be while still getting everything); if 'none', don't read, and only
-        get existing readings.
+    read_mode : str : 'all', 'unread-all', 'unread-unread', or 'none'
+        Optional, default 'undread-all' - If 'all', read everything (generally
+        slow); if 'unread-all', only read things that were unread, but use the
+        cache of old readings to get everything (as fast as you can be while
+        still getting everything); if 'unread-unread', just like 'unread-all',
+        but only return the unread content; if 'none', don't read, and only get
+        existing readings.
     force_fulltext : bool
         Optional, default False - If True, only read fulltext article, ignoring
         abstracts.
@@ -594,9 +650,17 @@ def produce_readings(id_dict, reader_list, verbose=False, read_mode='unread',
     if db is None:
         db = get_primary_db()
 
+    # Sort out our priorities
+    if prioritize:
+        logger.debug("Prioritizing...")
+        tcids = get_priority_tcids(id_dict,
+                                   ['pmc_oa', 'manuscripts', 'elsevier'],
+                                   always_add=['pubmed'], db=db)
+        id_dict = {'tcid': list(tcids)}
+
     prev_readings = []
     skip_reader_tcid_dict = None
-    if read_mode != 'all':
+    if read_mode not in ['all', 'unread-unread']:
         prev_readings = get_db_readings(id_dict, reader_list, force_fulltext,
                                         batch_size, db=db)
         skip_reader_tcid_dict = {r.name: [] for r in reader_list}
@@ -619,7 +683,7 @@ def produce_readings(id_dict, reader_list, verbose=False, read_mode='unread',
         except Exception as e:
             logger.exception(e)
             if pickle_file is None:
-                pickle_file = ("failure_reading_dump_%s.pkl" 
+                pickle_file = ("failure_reading_dump_%s.pkl"
                                % datetime.now().strftime('%Y%m%d_%H%M%S'))
             logger.error("Cound not upload readings. Results are pickled in: "
                          + pickle_file)
@@ -652,8 +716,10 @@ def upload_statements(stmt_data_list, db=None):
     logger.info("Uploading agents to the database.")
     reading_id_set = set([sd.reading_id for sd in stmt_data_list])
     if len(reading_id_set):
-        insert_agents(db, [sd.statement for sd in stmt_data_list],
-                         db.Statements.reader_ref.in_(reading_id_set))
+        uuid_set = {s.statement.uuid for s in stmt_data_list}
+        insert_agents(db, db.Statements, db.Agents,
+                      db.Statements.uuid.in_(uuid_set), verbose=True,
+                      override_default_query=True)
     return
 
 
@@ -718,9 +784,18 @@ if __name__ == "__main__":
     base_dir = _get_dir(args.temp, 'run_%s' % ('_and_'.join(args.readers)))
 
     # Get the readers objects.
-    readers = [reader_class(base_dir=base_dir, n_proc=args.n_proc)
-               for reader_class in get_readers()
-               if reader_class.name.lower() in args.readers]
+    special_reach_args_dict = {
+        'input_character_limit': args.max_reach_space_ratio,
+        'max_space_ratio': args.max_reach_input_len
+    }
+    readers = []
+    for reader_name in args.readers:
+        kwargs = {'base_dir': base_dir, 'n_proc': args.n_proc}
+        if reader_name == 'REACH':
+            for key_name, reach_arg in special_reach_args_dict.items():
+                if reach_arg is not None:
+                    kwargs[key_name] = reach_arg
+        readers.append(get_reader(reader_name, **kwargs))
 
     # Set the verbosity. The quiet argument overrides the verbose argument.
     verbose = args.verbose and not args.quiet
@@ -744,7 +819,8 @@ if __name__ == "__main__":
                                    read_mode=args.mode, batch_size=args.b_in,
                                    force_fulltext=args.force_fulltext,
                                    no_upload=args.no_reading_upload,
-                                   pickle_file=reading_pickle)
+                                   pickle_file=reading_pickle,
+                                   prioritize=args.use_best_fulltext)
 
         # Convert the outputs to statements ==================================
         produce_statements(outputs, no_upload=args.no_statement_upload,

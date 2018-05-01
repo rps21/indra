@@ -1,6 +1,7 @@
 from __future__ import absolute_import, print_function, unicode_literals
 from builtins import dict, str
 import re
+import math
 import logging
 import itertools
 from indra.util import fast_deepcopy
@@ -65,35 +66,37 @@ class _BaseAgentSet(object):
             base_agent = _BaseAgent(_n(agent.name))
             self.agents[_n(agent.name)] = base_agent
 
-        # Handle bound conditions
-        for bc in agent.bound_conditions:
-            bound_base_agent = self.get_create_base_agent(bc.agent)
-            bound_base_agent.create_site(get_binding_site_name(agent))
-            base_agent.create_site(get_binding_site_name(bc.agent))
+        # If it's a molecular agent
+        if isinstance(agent, ist.Agent):
+            # Handle bound conditions
+            for bc in agent.bound_conditions:
+                bound_base_agent = self.get_create_base_agent(bc.agent)
+                bound_base_agent.create_site(get_binding_site_name(agent))
+                base_agent.create_site(get_binding_site_name(bc.agent))
 
-        # Handle modification conditions
-        for mc in agent.mods:
-            base_agent.create_mod_site(mc)
+            # Handle modification conditions
+            for mc in agent.mods:
+                base_agent.create_mod_site(mc)
 
-        # Handle mutation conditions
-        for mc in agent.mutations:
-            res_from = mc.residue_from if mc.residue_from else 'mut'
-            res_to = mc.residue_to if mc.residue_to else 'X'
-            if mc.position is None:
-                mut_site_name = res_from
-            else:
-                mut_site_name = res_from + mc.position
+            # Handle mutation conditions
+            for mc in agent.mutations:
+                res_from = mc.residue_from if mc.residue_from else 'mut'
+                res_to = mc.residue_to if mc.residue_to else 'X'
+                if mc.position is None:
+                    mut_site_name = res_from
+                else:
+                    mut_site_name = res_from + mc.position
 
-            base_agent.create_site(mut_site_name, states=['WT', res_to])
+                base_agent.create_site(mut_site_name, states=['WT', res_to])
 
-        # Handle location condition
-        if agent.location is not None:
-            base_agent.create_site('loc', [_n(agent.location)])
+            # Handle location condition
+            if agent.location is not None:
+                base_agent.create_site('loc', [_n(agent.location)])
 
-        # Handle activity
-        if agent.activity is not None:
-            site_name = agent.activity.activity_type
-            base_agent.create_site(site_name, ['inactive', 'active'])
+            # Handle activity
+            if agent.activity is not None:
+                site_name = agent.activity.activity_type
+                base_agent.create_site(site_name, ['inactive', 'active'])
 
         # There might be overwrites here
         for db_name, db_ref in agent.db_refs.items():
@@ -291,30 +294,32 @@ def get_mod_site_name(mod_type, residue, position):
 def get_agent_rule_str(agent):
     """Construct a string from an Agent as part of a PySB rule name."""
     rule_str_list = [_n(agent.name)]
-    for mod in agent.mods:
-        mstr = abbrevs[mod.mod_type]
-        if mod.residue is not None:
-            mstr += mod.residue
-        if mod.position is not None:
-            mstr += mod.position
-        rule_str_list.append('%s' % mstr)
-    for mut in agent.mutations:
-        res_from = mut.residue_from if mut.residue_from else 'mut'
-        res_to = mut.residue_to if mut.residue_to else 'X'
-        if mut.position is None:
-            mut_site_name = res_from
-        else:
-            mut_site_name = res_from + mut.position
-        mstr = mut_site_name + res_to
-        rule_str_list.append(mstr)
-    if agent.bound_conditions:
-        for b in agent.bound_conditions:
-            if b.is_bound:
-                rule_str_list.append(_n(b.agent.name))
+    # If it's a molecular agent
+    if isinstance(agent, ist.Agent):
+        for mod in agent.mods:
+            mstr = abbrevs[mod.mod_type]
+            if mod.residue is not None:
+                mstr += mod.residue
+            if mod.position is not None:
+                mstr += mod.position
+            rule_str_list.append('%s' % mstr)
+        for mut in agent.mutations:
+            res_from = mut.residue_from if mut.residue_from else 'mut'
+            res_to = mut.residue_to if mut.residue_to else 'X'
+            if mut.position is None:
+                mut_site_name = res_from
             else:
-                rule_str_list.append('n' + _n(b.agent.name))
-    if agent.location is not None:
-        rule_str_list.append(_n(agent.location))
+                mut_site_name = res_from + mut.position
+            mstr = mut_site_name + res_to
+            rule_str_list.append(mstr)
+        if agent.bound_conditions:
+            for b in agent.bound_conditions:
+                if b.is_bound:
+                    rule_str_list.append(_n(b.agent.name))
+                else:
+                    rule_str_list.append('n' + _n(b.agent.name))
+        if agent.location is not None:
+            rule_str_list.append(_n(agent.location))
     rule_str = '_'.join(rule_str_list)
     return rule_str
 
@@ -374,6 +379,12 @@ def get_uncond_agent(agent):
 def grounded_monomer_patterns(model, agent):
     """Get monomer patterns for the agent accounting for grounding information.
     """
+    # If it's not a molecular agent
+    if not isinstance(agent, ist.Agent):
+        monomer = model.monomers.get(agent.name)
+        if not monomer:
+            return
+        yield monomer()
     # Iterate over all model annotations to identify the monomer associated
     # with this agent
     monomer = None
@@ -404,7 +415,7 @@ def grounded_monomer_patterns(model, agent):
         logger.info('No monomer found corresponding to agent %s' % agent)
         return
     # Now that we have a monomer for the agent, look for site/state
-    # combinations corresponding to the state of the agent.  For every one of
+    # combinations corresponding to the state of the agent. For every one of
     # the modifications specified in the agent signature, check to see if it
     # can be satisfied based on the agent's annotations.  For every one we find
     # that is consistent, we yield it--there may be more than one.
@@ -518,6 +529,8 @@ def get_site_pattern(agent):
 
     This crates the mapping to the associated PySB monomer from an
     INDRA Agent object."""
+    if not isinstance(agent, ist.Agent):
+        return {}
     pattern = {}
     # Handle bound conditions
     for bc in agent.bound_conditions:
@@ -816,8 +829,54 @@ class PysbAssembler(object):
         for m in self.model.monomers:
             set_base_initial_condition(self.model, m, value_num)
 
+    def set_expression(self, expression_dict):
+        """Set protein expression amounts as initial conditions
+
+        Parameters
+        ----------
+        expression_dict : dict
+            A dictionary in which the keys are gene names and the
+            values are numbers representing the absolute amount
+            (count per cell) of proteins expressed. Proteins that
+            are not expressed can be represented as nan. Entries
+            that are not in the dict or are in there but resolve
+            to None, are set to the default initial amount.
+            Example: {'EGFR': 12345, 'BRAF': 4567, 'ESR1': nan}
+        """
+        if self.model is None:
+            return
+
+        monomers_found = []
+        monomers_notfound = []
+        # Iterate over all the monomers
+        for m in self.model.monomers:
+            if (m.name in expression_dict and
+                expression_dict[m.name] is not None):
+                # Try to get the expression amount from the dict
+                init = expression_dict[m.name]
+                # We interpret nan and None as not expressed
+                if math.isnan(init):
+                    init = 0
+                init_round = round(init)
+                set_base_initial_condition(self.model, m, init_round)
+                monomers_found.append(m.name)
+            else:
+                set_base_initial_condition(self.model, m,
+                                           self.default_initial_amount)
+                monomers_notfound.append(m.name)
+        logger.info('Monomers set to given context')
+        logger.info('-----------------------------')
+        for m in monomers_found:
+            logger.info('%s' % m)
+        if monomers_notfound:
+            logger.info('')
+            logger.info('Monomers not found in given context')
+            logger.info('-----------------------------------')
+            for m in monomers_notfound:
+                logger.info('%s' % m)
+
     def set_context(self, cell_type):
-        """Set protein expression data as initial conditions.
+        """Set protein expression amounts from CCLE as initial conditions.
 
         This method uses :py:mod:`indra.databases.context_client` to get
         protein expression levels for a given cell type and set initial
@@ -841,28 +900,7 @@ class PysbAssembler(object):
                            cell_type)
             self.add_default_initial_conditions()
             return
-        monomers_found = []
-        monomers_notfound = []
-        for m in self.model.monomers:
-            init = amounts.get(m.name)
-            if init is not None:
-                init_round = round(init)
-                set_base_initial_condition(self.model, m, init_round)
-                monomers_found.append(m.name)
-            else:
-                set_base_initial_condition(self.model, m,
-                                           self.default_initial_amount)
-                monomers_notfound.append(m.name)
-        logger.info('Monomers set to %s context' % cell_type)
-        logger.info('--------------------------------')
-        for m in monomers_found:
-            logger.info('%s' % m)
-        if monomers_notfound:
-            logger.info('')
-            logger.info('Monomers not found in %s context' % cell_type)
-            logger.info('-----------------------------------------')
-            for m in monomers_notfound:
-                logger.info('%s' % m)
+        self.set_expression(amounts)
 
     def print_model(self):
         """Print the assembled model as a PySB program string.
@@ -2300,6 +2338,8 @@ def increaseamount_assemble_one_step(stmt, model, agent_set, rate_law=None):
         subj_pattern = get_monomer_pattern(model, stmt.subj)
         rule_subj_str = get_agent_rule_str(stmt.subj)
         rule_name = '%s_synthesizes_%s' % (rule_subj_str, rule_obj_str)
+        if rule_name in [r.name for r in model.rules]:
+            return
         if not rate_law:
             param_name = 'kf_' + stmt.subj.name[0].lower() + \
                                 stmt.obj.name[0].lower() + '_synth'
@@ -2317,7 +2357,8 @@ def increaseamount_assemble_one_step(stmt, model, agent_set, rate_law=None):
             param_name = 'n_' + stmt.subj.name[0].lower() + \
                                 stmt.obj.name[0].lower() + '_synth'
             n_hill = get_create_parameter(model, param_name, 1)
-            subj_obs = Observable(rule_name + '_subj_obs', subj_pattern)
+            obs_name = '%s_subj_obs' % rule_name
+            subj_obs = Observable(obs_name, subj_pattern)
             model.add_component(subj_obs)
             synth_rate = Expression(rule_name + '_rate',
                 kf * (subj_obs ** (n_hill-1)) / (Ka**n_hill + subj_obs**n_hill))
@@ -2345,7 +2386,7 @@ def influence_assemble_one_step(stmt, *args):
     if stmt.overall_polarity() == -1:
         return decreaseamount_assemble_one_step(stmt, *args)
     else:
-        return increaseamount_assemble_one_step(stmt, *args, rate_law='hill')
+        return increaseamount_assemble_one_step(stmt, *args)
 influence_monomers_default = influence_monomers_one_step
 influence_assemble_default = influence_assemble_one_step
 
@@ -2451,12 +2492,25 @@ class PysbPreassembler(object):
                 base_agent.add_activity_form(agent_to_add, stmt.is_active)
 
     def replace_activities(self):
+        logger.info('Running PySB Preassembler replace activities')
         # TODO: handle activity hierarchies
+        new_stmts = []
+        def has_agent_activity(stmt):
+            """Return True if any agents in the Statement have activity."""
+            for agent in stmt.agent_list():
+                if isinstance(agent, ist.Agent) and agent.activity is not None:
+                    return True
+            return False
         # First collect all explicit active forms
         self._gather_active_forms()
-        new_stmts = []
         # Iterate over all statements
-        for stmt in self.statements:
+        for j, stmt in enumerate(self.statements):
+            logger.debug('%d/%d %s' % (j, len(self.statements), stmt))
+            # If the Statement doesn't have any activities, we can just
+            # keep it and move on
+            if not has_agent_activity(stmt):
+                new_stmts.append(stmt)
+                continue
             stmt_agents = stmt.agent_list()
             num_agents = len(stmt_agents)
             # Make a list with an empty list for each Agent so that later
@@ -2466,7 +2520,8 @@ class PysbPreassembler(object):
                 # This is the case where there is an activity flag on an
                 # Agent which we will attempt to replace with an explicit
                 # active form
-                if agent is not None and agent.activity is not None:
+                if agent is not None and isinstance(agent, ist.Agent) and \
+                        agent.activity is not None:
                     base_agent = self.agent_set.get_create_base_agent(agent)
                     # If it is an "active" state
                     if agent.activity.is_active:
@@ -2542,9 +2597,9 @@ class PysbPreassembler(object):
 
     @staticmethod
     def _set_agent_context(from_agent, to_agent):
-        # TODO: what can we do about semantic conflicts here like the same
-        # bound condition with True/False is_bound appearing in the
-        # two contexts?
+        if not isinstance(from_agent, ist.Agent) or \
+            not isinstance(to_agent, ist.Agent):
+            return
         def add_no_duplicate(from_lst, to_lst):
             for fm in from_lst:
                 found = False
@@ -2555,6 +2610,9 @@ class PysbPreassembler(object):
                 if not found:
                     to_lst.append(fm)
             return to_lst
+        # TODO: what can we do about semantic conflicts here like the same
+        # bound condition with True/False is_bound appearing in the
+        # two contexts?
         to_agent.bound_conditions = \
             add_no_duplicate(to_agent.bound_conditions,
                              from_agent.bound_conditions)

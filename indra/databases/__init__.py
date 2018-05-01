@@ -36,13 +36,17 @@ def get_identifiers_url(db_name, db_id):
         url = identifiers_url + 'pubchem.compound/%s' % db_id
     elif db_name == 'PF':
         url = identifiers_url + 'pfam/%s' % db_id
+    elif db_name == 'MIRBASEM':
+        url = identifiers_url + 'mirbase.mature/%s' % db_id
+    elif db_name == 'MIRBASE':
+        url = identifiers_url + 'mirbase/%s' % db_id
     elif db_name == 'MESH':
         url = identifiers_url + 'mesh/%s' % db_id
     elif db_name == 'HMDB':
         url = identifiers_url + 'hmdb/%s' % db_id
     # Special cases with no identifiers entry
     elif db_name == 'FPLX':
-        url = 'http://sorger.med.harvard.edu/indra/entities/%s' % db_id
+        url = 'http://identifiers.org/fplx/%s' % db_id
     elif db_name == 'NXPFA':
         url = 'https://www.nextprot.org/term/FA-%s' % db_id
     elif db_name == 'TEXT':

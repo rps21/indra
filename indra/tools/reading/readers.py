@@ -17,6 +17,7 @@ from datetime import datetime
 from multiprocessing import Pool
 from platform import system
 
+from indra import get_config
 from indra.db import formats
 from indra.db import sql_expressions as sql
 from indra.util import zip_string
@@ -24,6 +25,10 @@ from indra.sources import sparser, reach
 
 
 logger = logging.getLogger('readers')
+
+# Set a character limit for reach reading
+REACH_CHARACTER_LIMIT = 5e5
+REACH_MAX_SPACE_RATIO = 0.5
 
 
 def _get_dir(*args):
@@ -83,6 +88,10 @@ class Reader(object):
         self.input_dir = _get_dir(tmp_dir, 'input')
         return
 
+    @classmethod
+    def get_version(cls):
+        raise NotImplementedError()
+
     def read(self, read_list, verbose=False, log=False):
         "Read a list of items and return a dict of output files."
         raise NotImplementedError()
@@ -101,6 +110,11 @@ class ReachReader(Reader):
 
     def __init__(self, *args, **kwargs):
         self.exec_path, self.version = self._check_reach_env()
+        self.do_content_check = kwargs.pop("check_content", True)
+        self.input_character_limit = kwargs.pop('input_character_limit',
+                                                REACH_CHARACTER_LIMIT)
+        self.max_space_ratio = kwargs.pop('max_space_ratio',
+                                          REACH_MAX_SPACE_RATIO)
         super(ReachReader, self).__init__(*args, **kwargs)
         conf_fmt_fname = path.join(path.dirname(__file__),
                                    'util/reach_conf_fmt.txt')
@@ -155,19 +169,25 @@ class ReachReader(Reader):
             return None
         return json_dict
 
-    def _check_reach_env(self):
+    @staticmethod
+    def _check_reach_env():
         """Check that the environment supports runnig reach."""
         # Get the path to the REACH JAR
-        path_to_reach = environ.get('REACHPATH', None)
+        path_to_reach = get_config('REACHPATH')
+        if path_to_reach is None:
+            path_to_reach = environ.get('REACHPATH', None)
         if path_to_reach is None or not path.exists(path_to_reach):
             raise ReachError(
-                'Reach path unset or invalid. Check REACHPATH environment var.'
+                'Reach path unset or invalid. Check REACHPATH environment var '
+                'and/or config file.'
                 )
 
         logger.debug('Using REACH jar at: %s' % path_to_reach)
 
         # Get the reach version.
-        reach_version = environ.get('REACH_VERSION', None)
+        reach_version = get_config('REACH_VERSION')
+        if reach_version is None:
+            reach_version = environ.get('REACH_VERSION', None)
         if reach_version is None:
             logger.debug('REACH version not set in REACH_VERSION')
             m = re.match('reach-(.*?)\.jar', path.basename(path_to_reach))
@@ -176,15 +196,34 @@ class ReachReader(Reader):
         logger.debug('Using REACH version: %s' % reach_version)
         return path_to_reach, reach_version
 
-    def write_content(self, text_content):
+    @classmethod
+    def get_version(cls):
+        _, version = cls._check_reach_env()
+        return version
+
+    def _check_content(self, content_str):
+        """Check if the content is likely to be successfully read."""
+        if self.do_content_check:
+            space_ratio = float(content_str.count(' '))/len(content_str)
+            if space_ratio > self.max_space_ratio:
+                return "space-ratio: %f > %f" % (space_ratio,
+                                                 self.max_space_ratio)
+            if len(content_str) > self.input_character_limit:
+                return "too long: %d > %d" % (len(content_str),
+                                              self.input_character_limit)
+        return None
+
+    def _write_content(self, text_content):
         def write_content_file(ext):
             fname = '%s.%s' % (text_content.id, ext)
+            cont_str = zlib.decompress(text_content.content, 16+zlib.MAX_WBITS)
+
+            quality_issue = self._check_content(cont_str.decode('utf8'))
+            if quality_issue is not None:
+                logger.warning("Skipping %d due to: %s"
+                                % (text_content.id, quality_issue))
             with open(path.join(self.input_dir, fname), 'wb') as f:
-                f.write(
-                    zlib.decompress(
-                        text_content.content, 16+zlib.MAX_WBITS
-                        )
-                    )
+                f.write(cont_str)
             logger.debug('%s saved for reading by reach.' % fname)
         if text_content.format == formats.XML:
             write_content_file('nxml')
@@ -192,19 +231,27 @@ class ReachReader(Reader):
             write_content_file('txt')
         else:
             raise ReachError("Unrecognized format %s." % text_content.format)
+        return
+
+    def _move_content(self, text_content):
+        fname = text_content.strip()
+        with open(fname) as f:
+            quality_issue = self._check_content(f.read())
+        if quality_issue is not None:
+            logger.warning("Skipping %s due to: %s"
+                           % (fname, quality_issue))
+        new_fname = path.join(self.input_dir, path.basename(fname))
+        shutil.copy(fname, new_fname)
+        return
 
     def prep_input(self, read_list):
         """Apply the readers to the content."""
         logger.info("Prepping input.")
         for text_content in read_list:
             if isinstance(text_content, str):
-                fname = text_content.strip()
-                shutil.copy(
-                    fname,
-                    path.join(self.input_dir, path.basename(fname))
-                    )
+                self._move_content(text_content)
             else:
-                self.write_content(text_content)
+                self._write_content(text_content)
         return
 
     def get_output(self):
@@ -299,9 +346,13 @@ class SparserReader(Reader):
     name = 'SPARSER'
 
     def __init__(self, *args, **kwargs):
-        self.version = sparser.get_version()
+        self.version = self.get_version()
         super(SparserReader, self).__init__(*args, **kwargs)
         return
+
+    @classmethod
+    def get_version(cls):
+        return sparser.get_version()
 
     def prep_input(self, read_list):
         "Prepare the list of files or text content objects to be read."
@@ -399,9 +450,9 @@ class SparserReader(Reader):
                 content
                 ))
             if clear:
+                input_path = outpath.replace('-semantics.json', '.nxml')
                 try:
                     remove(outpath)
-                    input_path = outpath.replace('-semantics.json', '.nxml')
                     remove(input_path)
                 except Exception as e:
                     logger.exception(e)
@@ -481,8 +532,12 @@ class SparserReader(Reader):
                         if log:
                             outbuf.write(b'Log for producing output %d/%d.\n'
                                          % (i, len(out_lists_and_buffs)))
-                            buff.seek(0)
-                            outbuf.write(buff.read() + b'\n')
+                            if buff is not None:
+                                buff.seek(0)
+                                outbuf.write(buff.read() + b'\n')
+                            else:
+                                outbuf.write(b'ERROR: no buffer was None. '
+                                             b'No logs available.\n')
                             outbuf.flush()
             finally:
                 if log:
@@ -504,6 +559,21 @@ def get_readers():
                     if isinstance(cls, type) and issubclass(cls, Reader)
                     and cls_name != 'Reader']
     return children
+
+
+def get_reader_class(reader_name):
+    """Get a particular reader class by name."""
+    for reader_class in get_readers():
+        if reader_class.name.lower() == reader_name.lower():
+            return reader_class
+    else:
+        logger.error("No such reader: %s" % reader_name)
+        return None
+
+
+def get_reader(reader_name, *args, **kwargs):
+    """Get an instantiated reader by name."""
+    return get_reader_class(reader_name)(*args, **kwargs)
 
 
 class ReadingData(object):
@@ -539,6 +609,15 @@ class ReadingData(object):
         self.format = content_format
         self.content = content
         return
+
+    @classmethod
+    def from_db_reading(cls, db_reading):
+        return cls(db_reading.text_content_id, db_reading.reader,
+                   db_reading.reader_version, db_reading.format,
+                   json.loads(zlib.decompress(db_reading.bytes,
+                                              16+zlib.MAX_WBITS)
+                              .decode('utf8')),
+                   db_reading.id)
 
     @classmethod
     def get_cols(self):

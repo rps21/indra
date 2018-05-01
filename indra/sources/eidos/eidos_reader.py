@@ -1,12 +1,13 @@
 import os
 import json
+from indra import get_config
 
 # Before the import, we have to deal with the CLASSPATH to avoid clashes
 # with REACH.
 def _set_classpath():
     clp = os.environ.get('CLASSPATH')
-    eip = os.environ.get('EIDOSPATH')
-    rep = os.environ.get('REACHPATH')
+    eip = get_config('EIDOSPATH')
+    rep = get_config('REACHPATH')
     clp_parts = clp.split(':') if clp else []
     new_clp_parts = []
     has_eidos = False
@@ -78,7 +79,7 @@ class EidosReader(object):
             ml = autoclass('scala.collection.mutable.MutableList')()
             ml.appendElem(annot_doc)
             jc = autoclass(eidos_package + '.serialization.json.JLDCorpus')
-            corpus = jc(ml, None)
+            corpus = jc(ml, self.eidos_reader)
             mentions_json = corpus.toJsonStr()
         json_dict = json.loads(mentions_json)
         return json_dict

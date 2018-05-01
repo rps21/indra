@@ -20,6 +20,7 @@ from indra.tools.machine import twitter_client
 from indra.tools.gene_network import GeneNetwork
 from indra.tools.incremental_model import IncrementalModel
 from indra.literature import pubmed_client, get_full_text, elsevier_client
+from indra import get_config, has_config
 
 try:
     import boto3
@@ -45,12 +46,12 @@ def build_prior(genes, out_file):
 
 
 def get_email_pmids(gmail_cred):
-    M = gmail_client.gmail_login(gmail_cred.get('user'),
+    mailbox = gmail_client.gmail_login(gmail_cred.get('user'),
                                  gmail_cred.get('password'))
-    gmail_client.select_mailbox(M, 'INBOX')
+    gmail_client.select_mailbox(mailbox, 'INBOX')
     num_days = int(gmail_cred.get('num_days', 10))
     logger.info('Searching last %d days of emails', num_days)
-    pmids = gmail_client.get_message_pmids(M, num_days)
+    pmids = gmail_client.get_message_pmids(mailbox, num_days)
     return pmids
 
 
@@ -71,7 +72,7 @@ def get_searchgenes_pmids(search_genes, num_days):
     for s in search_genes:
         try:
             pmids[s] = pubmed_client.get_ids_for_gene(s, reldate=num_days)
-        except ValueError as e:
+        except ValueError:
             logger.error('Gene symbol %s is invalid')
             continue
     return pmids
@@ -86,7 +87,25 @@ def check_pmids(stmts):
 
 
 def process_paper(model_name, pmid):
-    json_path = os.path.join(model_name, 'jsons', 'PMID%s.json' % pmid)
+    """Process a paper with the given pubmed identifier
+
+    Parameters
+    ----------
+    model_name : str
+        The directory for the INDRA machine
+    pmid : str
+        The PMID to process.
+
+    Returns
+    -------
+    rp : ReachProcessor
+        A ReachProcessor containing the extracted INDRA Statements
+        in rp.statements.
+    txt_format : str
+        A string representing the format of the text
+    """
+    json_directory = os.path.join(model_name, 'jsons')
+    json_path = os.path.join(json_directory, 'PMID%s.json' % pmid)
 
     if pmid.startswith('api') or pmid.startswith('PMID'):
         logger.warning('Invalid PMID: %s' % pmid)
@@ -98,23 +117,20 @@ def process_paper(model_name, pmid):
     else:
         try:
             txt, txt_format = get_full_text(pmid, 'pmid')
-        except:
+        except Exception:
             return None, None
 
         if txt_format == 'pmc_oa_xml':
-            rp = reach.process_nxml_str(txt, citation=pmid, offline=True)
-            if os.path.exists('reach_output.json'):
-                shutil.move('reach_output.json', json_path)
+            rp = reach.process_nxml_str(txt, citation=pmid, offline=True,
+                                        output_fname=json_path)
         elif txt_format == 'elsevier_xml':
             # Extract the raw text from the Elsevier XML
             txt = elsevier_client.extract_text(txt)
-            rp = reach.process_text(txt, citation=pmid, offline=True)
-            if os.path.exists('reach_output.json'):
-                shutil.move('reach_output.json', json_path)
+            rp = reach.process_text(txt, citation=pmid, offline=True,
+                                    output_fname=json_path)
         elif txt_format == 'abstract':
-            rp = reach.process_text(txt, citation=pmid, offline=True)
-            if os.path.exists('reach_output.json'):
-                shutil.move('reach_output.json', json_path)
+            rp = reach.process_text(txt, citation=pmid, offline=True,
+                                    output_fname=json_path)
         else:
             rp = None
     if rp is not None:
@@ -205,6 +221,9 @@ def extend_model(model_name, model, pmids, start_time_local):
 
     logger.info('Found %d unique and novel PMIDS', len(pmids_inv))
 
+    if not os.path.exists(os.path.join(model_name, 'jsons')):
+        os.mkdir(os.path.join(model_name, 'jsons'))
+
     for counter, (pmid, search_terms) in enumerate(pmids_inv.items(), start=1):
         logger.info('[%d/%d] Processing %s for search terms: %s',
                     counter, len(pmids_inv), pmid, search_terms)
@@ -224,10 +243,10 @@ def extend_model(model_name, model, pmids, start_time_local):
             nexisting += 1
 
         if not rp.statements:
-            logger.info('No statement from PMID%s (%s)' % \
+            logger.info('No statement from PMID%s (%s)' %
                         (pmid, txt_format))
         else:
-            logger.info('%d statements from PMID%s (%s)' % \
+            logger.info('%d statements from PMID%s (%s)' %
                         (len(rp.statements), pmid, txt_format))
         model.add_statements(pmid, rp.statements)
 
@@ -247,17 +266,17 @@ class InvalidConfigurationError(Exception):
     pass
 
 
-def get_config(config_fname):
+def get_machine_config(config_fname):
     try:
         fh = open(config_fname, 'rt')
     except IOError as e:
         logger.error('Could not open configuration file %s.' % config_fname)
-        raise(e)
+        raise e
     try:
         config = yaml.load(fh)
     except Exception as e:
         logger.error('Could not parse YAML configuration %s.' % config_fname)
-        raise(e)
+        raise e
 
     return config
 
@@ -285,13 +304,13 @@ def filter_db_highbelief(stmts_in, db_names, belief_cutoff):
         supp = []
         for st in stmt.supports:
             sources = set([ev.source_api for ev in st.evidence])
-            if st.belief >= belief_cutoff or \
-                sources.intersection(db_names):
+            if (st.belief >= belief_cutoff or
+                sources.intersection(db_names)):
                 supp.append(st)
         for st in stmt.supported_by:
             sources = set([ev.source_api for ev in st.evidence])
-            if st.belief >= belief_cutoff or \
-                sources.intersection(db_names):
+            if (st.belief >= belief_cutoff or
+               sources.intersection(db_names)):
                 supp_by.append(st)
         stmt.supports = supp
         stmt.supported_by = supp_by
@@ -386,10 +405,10 @@ def get_ndex_cred(config):
     ndex_cred = config.get('ndex')
     if not ndex_cred:
         return
-    elif not ndex_cred.get('user'):
+    elif not ndex_cred.get('user') and not has_config('NDEX_USERNAME'):
         logger.info('NDEx user missing.')
         return
-    elif not ndex_cred.get('password'):
+    elif not ndex_cred.get('password')and not has_config('NDEX_PASSWORD'):
         logger.info('NDEx password missing.')
         return
     elif not ndex_cred.get('network'):
@@ -399,7 +418,7 @@ def get_ndex_cred(config):
 
 
 def run_machine(model_path, pmids, belief_threshold, search_genes=None,
-                ndex_cred=None, twitter_cred=None):
+                ndex_cred=None, twitter_cred=None, grounding_map=None):
     start_time_local = datetime.datetime.now(tzlocal.get_localzone())
     date_str = make_date_str()
 
@@ -432,7 +451,7 @@ def run_machine(model_path, pmids, belief_threshold, search_genes=None,
     stats = {}
     logger.info(time.strftime('%c'))
     logger.info('Preassembling original model.')
-    model.preassemble(filters=global_filters)
+    model.preassemble(filters=global_filters, grounding_map=grounding_map)
     logger.info(time.strftime('%c'))
 
     # Original statistics
@@ -451,7 +470,7 @@ def run_machine(model_path, pmids, belief_threshold, search_genes=None,
     stats['new_papers'], stats['new_abstracts'], stats['existing'] = \
         extend_model(model_path, model, pmids, start_time_local)
     # Having added new statements, we preassemble the model
-    model.preassemble(filters=global_filters)
+    model.preassemble(filters=global_filters, grounding_map=grounding_map)
 
     # New statistics
     stats['new_stmts'] = len(model.get_statements())
@@ -499,7 +518,7 @@ def run_machine(model_path, pmids, belief_threshold, search_genes=None,
             twitter_client.update_status(msg_str, twitter_cred)
 
 
-def run_with_search_helper(model_path, config):
+def run_with_search_helper(model_path, config, num_days=None):
     logger.info('-------------------------')
     logger.info(time.strftime('%c'))
 
@@ -510,11 +529,11 @@ def run_with_search_helper(model_path, config):
     default_config_fname = os.path.join(model_path, 'config.yaml')
 
     if config:
-        config = get_config(config)
+        config = get_machine_config(config)
     elif os.path.exists(default_config_fname):
         logger.info('Loading default configuration from %s',
                     default_config_fname)
-        config = get_config(default_config_fname)
+        config = get_machine_config(default_config_fname)
     else:
         logger.error('Configuration file argument missing.')
         sys.exit()
@@ -557,7 +576,7 @@ def run_with_search_helper(model_path, config):
             # Put the email_pmids into the pmids dictionary
             pmids['Gmail'] = email_pmids
             logger.info('Collected %d PMIDs from Gmail', len(email_pmids))
-        except:
+        except Exception:
             logger.exception('Could not get PMIDs from Gmail, continuing.')
 
     # Get PMIDs for general search_terms and genes
@@ -569,12 +588,28 @@ def run_with_search_helper(model_path, config):
         if search_genes is not None:
             search_terms += search_genes
         logger.info('Using search terms: %s' % ', '.join(search_terms))
-        num_days = int(config.get('search_terms_num_days', 5))
+
+        if num_days is None:
+            num_days = int(config.get('search_terms_num_days', 5))
         logger.info('Searching the last %d days', num_days)
+
         pmids_term = get_searchterm_pmids(search_terms, num_days=num_days)
         num_pmids = len(set(itt.chain.from_iterable(pmids_term.values())))
         logger.info('Collected %d PMIDs from PubMed search_terms.', num_pmids)
         pmids = _extend_dict(pmids, pmids_term)
+
+    # Get optional grounding map
+    gm_path = config.get('grounding_map_path')
+    if gm_path:
+        try:
+            from indra.preassembler.grounding_mapper import load_grounding_map
+            grounding_map = load_grounding_map(gm_path)
+        except Exception as e:
+            logger.error('Could not load grounding map from %s' % gm_path)
+            logger.error(e)
+            grounding_map = None
+    else:
+        grounding_map = None
 
     '''
     # Get PMIDs for search_genes
@@ -595,15 +630,20 @@ def run_with_search_helper(model_path, config):
         belief_threshold,
         search_genes=search_genes,
         ndex_cred=ndex_cred,
-        twitter_cred=twitter_cred
+        twitter_cred=twitter_cred,
+        grounding_map=grounding_map
     )
 
 
-def summarize_helper(model_path):
+def load_model(model_path):
     logger.info(time.strftime('%c'))
     logger.info('Loading original model.')
     inc_model_file = os.path.join(model_path, 'model.pkl')
-    model = IncrementalModel(inc_model_file)
+    return IncrementalModel(inc_model_file)
+
+
+def summarize_helper(model_path):
+    model = load_model(model_path)
     stmts = model.get_statements()
     click.echo('Number of statements: {}'.format(len(stmts)))
     agents = model.get_model_agents()
@@ -612,16 +652,30 @@ def summarize_helper(model_path):
 
 def run_with_pmids_helper(model_path, pmids):
     default_config_fname = os.path.join(model_path, 'config.yaml')
-    config = get_config(default_config_fname)
+    config = get_machine_config(default_config_fname)
 
     belief_threshold = config.get('belief_threshold', 0.95)
     twitter_cred = get_twitter_cred(config)
     ndex_cred = get_ndex_cred(config)
+
+    # Get optional grounding map
+    gm_path = config.get('grounding_map_path')
+    if gm_path:
+        try:
+            from indra.preassembler.grounding_mapper import load_grounding_map
+            grounding_map = load_grounding_map(gm_path)
+        except Exception as e:
+            logger.error('Could not load grounding map from %s' % gm_path)
+            logger.error(e)
+            grounding_map = None
+    else:
+        grounding_map = None
 
     run_machine(
         model_path,
         {'enumerated': [pmid.strip() for pmid in pmids]},
         belief_threshold,
         ndex_cred=ndex_cred,
-        twitter_cred=twitter_cred
+        twitter_cred=twitter_cred,
+        grounding_map=grounding_map
     )

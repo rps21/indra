@@ -8,7 +8,7 @@ import botocore.session
 from time import sleep
 from datetime import datetime
 from indra.literature import elsevier_client as ec
-from indra.util.aws import get_job_log
+from indra.util.aws import get_job_log, tag_instance, get_batch_command
 
 bucket_name = 'bigmech'
 
@@ -21,7 +21,8 @@ class BatchReadingError(Exception):
 
 def wait_for_complete(queue_name, job_list=None, job_name_prefix=None,
                       poll_interval=10, idle_log_timeout=None,
-                      kill_on_log_timeout=False, stash_log_method=None):
+                      kill_on_log_timeout=False, stash_log_method=None,
+                      tag_instances=False):
     """Return when all jobs in the given list finished.
 
     If not job list is given, return when all jobs in queue finished.
@@ -80,26 +81,31 @@ def wait_for_complete(queue_name, job_list=None, job_name_prefix=None,
     def check_logs(job_defs):
         stalled_jobs = set()
         for job_def in job_defs:
-            log_lines = get_job_log(job_def, write_file=False)
-            jid = job_def['jobId']
-            now = datetime.now()
-            if jid not in job_log_dict.keys():
-                logger.info("Adding job %s to the log tracker at %s."
-                            % (jid, now))
-                job_log_dict[jid] = {'log': log_lines,
-                                     'check_time': now}
-            elif len(job_log_dict[jid]['log']) == len(log_lines):
-                check_dt = now - job_log_dict[jid]['check_time']
-                logger.warning(('Job \'%s\' has not produced output for '
-                                '%d seconds.')
-                               % (job_def['jobName'], check_dt.seconds))
-                if check_dt.seconds > idle_log_timeout:
-                    logger.warning("Job \'%s\' has stalled.")
-                    stalled_jobs.add(jid)
-            else:
-                old_log = job_log_dict[jid]['log']
-                old_log += log_lines[len(old_log):]
-                job_log_dict[jid]['check_time'] = now
+            try:
+                log_lines = get_job_log(job_def, write_file=False)
+                jid = job_def['jobId']
+                now = datetime.now()
+                if jid not in job_log_dict.keys():
+                    logger.info("Adding job %s to the log tracker at %s."
+                                % (jid, now))
+                    job_log_dict[jid] = {'log': log_lines,
+                                         'check_time': now}
+                elif len(job_log_dict[jid]['log']) == len(log_lines):
+                    check_dt = now - job_log_dict[jid]['check_time']
+                    logger.warning(('Job \'%s\' has not produced output for '
+                                    '%d seconds.')
+                                   % (job_def['jobName'], check_dt.seconds))
+                    if check_dt.seconds > idle_log_timeout:
+                        logger.warning("Job \'%s\' has stalled."
+                                       % job_def['jobName'])
+                        stalled_jobs.add(jid)
+                else:
+                    old_log = job_log_dict[jid]['log']
+                    old_log += log_lines[len(old_log):]
+                    job_log_dict[jid]['check_time'] = now
+            except Exception as e:
+                logger.error("Failed to check log for: %s" % str(job_def))
+                logger.exception(e)
         return stalled_jobs
 
     # Don't start watching jobs added after this command was initialized.
@@ -112,7 +118,8 @@ def wait_for_complete(queue_name, job_list=None, job_name_prefix=None,
                     for job_def in job_defs}
 
     batch_client = boto3.client('batch')
-    ecs_cluster_name = get_ecs_cluster_for_queue(queue_name, batch_client)
+    if tag_instances:
+        ecs_cluster_name = get_ecs_cluster_for_queue(queue_name, batch_client)
 
     terminate_msg = 'Job log has stalled for at least %f minutes.'
     terminated_jobs = set()
@@ -155,7 +162,8 @@ def wait_for_complete(queue_name, job_list=None, job_name_prefix=None,
                 ret = 0
                 break
 
-        tag_instances(ecs_cluster_name)
+        if tag_instances:
+            tag_instances_on_cluster(ecs_cluster_name)
         sleep(poll_interval)
 
     # Stash the logs
@@ -196,19 +204,23 @@ def stash_logs(job_defs, success_ids, failure_ids, queue_name, method='local',
                 f.write(log_str)
 
     for job_def_tpl in job_defs:
-        job_def = dict(job_def_tpl)
-        lines = get_job_log(job_def, write_file=False)
-        if lines is None:
-            logger.warning("No logs found for %s." % job_def['jobName'])
-            continue
-        log_str = ''.join(lines)
-        base_name = job_def['jobName']
-        if job_def['jobId'] in success_ids:
-            base_name += '_SUCCESS'
-        elif job_def['jobId'] in failure_ids:
-            base_name += '_FAILED'
-        logger.info('Stashing ' + base_name)
-        stash_log(log_str, base_name)
+        try:
+            job_def = dict(job_def_tpl)
+            lines = get_job_log(job_def, write_file=False)
+            if lines is None:
+                logger.warning("No logs found for %s." % job_def['jobName'])
+                continue
+            log_str = ''.join(lines)
+            base_name = job_def['jobName']
+            if job_def['jobId'] in success_ids:
+                base_name += '_SUCCESS'
+            elif job_def['jobId'] in failure_ids:
+                base_name += '_FAILED'
+            logger.info('Stashing ' + base_name)
+            stash_log(log_str, base_name)
+        except Exception as e:
+            logger.error("Failed to save logs for: %s" % str(job_def_tpl))
+            logger.exception(e)
     return
 
 
@@ -246,7 +258,7 @@ def get_ecs_cluster_for_queue(queue_name, batch_client=None):
     return ecs_cluster_name
 
 
-def tag_instances(cluster_name, project='cwc'):
+def tag_instances_on_cluster(cluster_name, project='cwc'):
     """Adds project tag to untagged instances in a given cluster.
 
     Parameters
@@ -270,17 +282,8 @@ def tag_instances(cluster_name, project='cwc'):
     ec2_instance_ids = [ci['ec2InstanceId'] for ci in container_instances]
 
     # Instantiate each instance to tag as a resource and create project tag
-    ec2 = boto3.resource('ec2')
     for instance_id in ec2_instance_ids:
-        instance = ec2.Instance(instance_id)
-        for tag in instance.tags:
-            if tag.get('Key') == 'project':
-                break
-        else:
-            logger.info('Adding project tag "%s" to instance %s' %
-                        (project, instance_id))
-            instance.create_tags(Tags=[{'Key': 'project',
-                                        'Value': project}])
+        tag_instance(instance_id, project=project)
     return
 
 
@@ -293,21 +296,24 @@ def get_environment():
 
     # Get the Elsevier keys from the Elsevier client
     environment_vars = [
-        {'name': ec.api_key_env_name,
-         'value': ec.elsevier_keys.get('X-ELS-APIKey')},
-        {'name': ec.inst_key_env_name,
-         'value': ec.elsevier_keys.get('X-ELS-Insttoken')},
+        {'name': ec.API_KEY_ENV_NAME,
+         'value': ec.ELSEVIER_KEYS.get('X-ELS-APIKey', '')},
+        {'name': ec.INST_KEY_ENV_NAME,
+         'value': ec.ELSEVIER_KEYS.get('X-ELS-Insttoken', '')},
         {'name': 'AWS_ACCESS_KEY_ID',
          'value': access_key},
         {'name': 'AWS_SECRET_ACCESS_KEY',
          'value': secret_key}
         ]
-    return environment_vars
+
+    # Only include values that are not empty.
+    return [var_dict for var_dict in environment_vars
+            if var_dict['value'] and var_dict['name']]
 
 
 def submit_reading(basename, pmid_list_filename, readers, start_ix=None,
                    end_ix=None, pmids_per_job=3000, num_tries=2,
-                   force_read=False, force_fulltext=False):
+                   force_read=False, force_fulltext=False, project_name=None):
     # Upload the pmid_list to Amazon S3
     pmid_list_key = 'reading_results/%s/pmids' % basename
     s3_client = boto3.client('s3')
@@ -333,15 +339,18 @@ def submit_reading(basename, pmid_list_filename, readers, start_ix=None,
         if job_end_ix > end_ix:
             job_end_ix = end_ix
         job_name = '%s_%d_%d' % (basename, job_start_ix, job_end_ix)
-        command_list = ['python', '-m',
-                        'indra.tools.reading.pmid_reading.read_pmids_aws',
-                        basename, '/tmp', '16', str(job_start_ix),
-                        str(job_end_ix), '-r'] + readers
+        command_list = get_batch_command(
+            ['python', '-m', 'indra.tools.reading.pmid_reading.read_pmids_aws',
+             basename, '/tmp', '16', str(job_start_ix), str(job_end_ix), '-r']
+            + readers,
+            purpose='pmid_reading',
+            project=project_name
+            )
         if force_read:
             command_list.append('--force_read')
         if force_fulltext:
             command_list.append('--force_fulltext')
-        print(command_list)
+        logger.info('Commands list: %s' % str(command_list))
         job_info = batch_client.submit_job(
             jobName=job_name,
             jobQueue='run_reach_queue',
@@ -351,14 +360,16 @@ def submit_reading(basename, pmid_list_filename, readers, start_ix=None,
                 'command': command_list},
             retryStrategy={'attempts': num_tries}
             )
-        print("submitted...")
+        logger.info("submitted...")
         job_list.append({'jobId': job_info['jobId']})
     return job_list
 
 
 def submit_db_reading(basename, id_list_filename, readers, start_ix=None,
                       end_ix=None, pmids_per_job=3000, num_tries=2,
-                      force_read=False, force_fulltext=False):
+                      force_read=False, force_fulltext=False,
+                      read_all_fulltext=False, project_name=None,
+                      max_reach_input_len=None, max_reach_space_ratio=None):
     # Upload the pmid_list to Amazon S3
     pmid_list_key = 'reading_inputs/%s/id_list' % basename
     s3_client = boto3.client('s3')
@@ -386,20 +397,29 @@ def submit_db_reading(basename, id_list_filename, readers, start_ix=None,
         mode = 'unread'
 
     # Iterate over the list of PMIDs and submit the job in chunks
-    batch_client = boto3.client('batch')
+    batch_client = boto3.client('batch', region_name='us-east-1')
     job_list = []
     for job_start_ix in range(start_ix, end_ix, pmids_per_job):
         job_end_ix = job_start_ix + pmids_per_job
         if job_end_ix > end_ix:
             job_end_ix = end_ix
         job_name = '%s_%d_%d' % (basename, job_start_ix, job_end_ix)
-        command_list = ['python', '-m',
-                        'indra.tools.reading.db_reading.read_db_aws',
-                        basename, '/tmp', mode, '32', str(job_start_ix),
-                        str(job_end_ix), '-r'] + readers
+        command_list = get_batch_command(
+            ['python', '-m', 'indra.tools.reading.db_reading.read_db_aws',
+             basename, '/tmp', mode, '32', str(job_start_ix), str(job_end_ix),
+             '-r'] + readers,
+            purpose='db_reading',
+            project=project_name
+            )
         if force_fulltext:
             command_list.append('--force_fulltext')
-        print(command_list)
+        if read_all_fulltext:
+            command_list.append('--read_all_fulltext')
+        if max_reach_input_len is not None:
+            command_list += ['--max_reach_input_len', max_reach_input_len]
+        if max_reach_space_ratio is not None:
+            command_list += ['--max_reach_space_ratio', max_reach_space_ratio]
+        logger.info('Command list: %s' % str(command_list))
         job_info = batch_client.submit_job(
             jobName=job_name,
             jobQueue='run_db_reading_queue',
@@ -409,12 +429,12 @@ def submit_db_reading(basename, id_list_filename, readers, start_ix=None,
                 'command': command_list},
             retryStrategy={'attempts': num_tries}
             )
-        print("submitted...")
+        logger.info("submitted...")
         job_list.append({'jobId': job_info['jobId']})
     return job_list
 
 
-def submit_combine(basename, readers, job_ids=None):
+def submit_combine(basename, readers, job_ids=None, project_name=None):
     if job_ids is not None and len(job_ids) > 20:
         print("WARNING: boto3 cannot support waiting for more than 20 jobs.")
         print("Please wait for the reading to finish, then run again with the")
@@ -425,10 +445,13 @@ def submit_combine(basename, readers, job_ids=None):
     environment_vars = get_environment()
 
     job_name = '%s_combine_reading_results' % basename
-    command_list = ['python', '-m',
-                    'indra.tools.reading.assemble_reading_stmts_aws',
-                    basename, '-r'] + readers
-    print(command_list)
+    command_list = get_batch_command(
+        ['python', '-m', 'indra.tools.reading.assemble_reading_stmts_aws',
+         basename, '-r'] + readers,
+        purpose='pmid_reading',
+        project=project_name
+        )
+    logger.info('Command list: %s' % str(command_list))
     kwargs = {'jobName': job_name, 'jobQueue': 'run_reach_queue',
               'jobDefinition': 'run_reach_jobdef',
               'containerOverrides': {'environment': environment_vars,
@@ -438,7 +461,7 @@ def submit_combine(basename, readers, job_ids=None):
         kwargs['dependsOn'] = job_ids
     batch_client = boto3.client('batch')
     batch_client.submit_job(**kwargs)
-    print("submitted...")
+    logger.info("submitted...")
 
 
 if __name__ == '__main__':
@@ -477,6 +500,11 @@ if __name__ == '__main__':
         default=['all'],
         nargs='+',
         help='Choose which reader(s) to use.'
+        )
+    parent_submit_parser.add_argument(
+        '--project',
+        help=('Set the project name. Default is DEFAULT_AWS_PROJECT in the '
+              'config.')
         )
     parent_read_parser = argparse.ArgumentParser(add_help=False)
     parent_read_parser.add_argument(
@@ -528,6 +556,23 @@ if __name__ == '__main__':
         help='Don\'t upload results to the database.'
         )
     '''
+    parent_db_parser.add_argument(
+        '--read_all_fulltext',
+        action='store_true',
+        help='Read all available fulltext for input ids, not just the best.'
+        )
+    parent_db_parser.add_argumet(
+        '--max_reach_space_ratio',
+        type=float,
+        help='Set the maximum ratio of spaces to non-spaces for REACH input.',
+        default=None
+    )
+    parent_db_parser.add_argument(
+        '--max_reach_input_len',
+        type=int,
+        help='Set the maximum length of content that REACH will read.',
+        default=None
+    )
 
     # Make non_db_parser and get subparsers
     non_db_parser = subparsers.add_parser(
@@ -594,10 +639,11 @@ if __name__ == '__main__':
                 args.ids_per_job,
                 2,
                 args.force_read,
-                args.force_fulltext
+                args.force_fulltext,
+                args.project
                 )
         if args.job_type in ['combine', 'full']:
-            submit_combine(args.basename, args.readers, job_ids)
+            submit_combine(args.basename, args.readers, job_ids, args.project)
     elif args.method == 'with-db':
         job_ids = submit_db_reading(
             args.basename,
@@ -608,5 +654,9 @@ if __name__ == '__main__':
             args.ids_per_job,
             2,
             args.force_read,
-            args.force_fulltext
+            args.force_fulltext,
+            args.read_all_fulltext,
+            args.project,
+            args.max_reach_input_len,
+            args.max_reach_space_ratio
             )

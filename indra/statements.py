@@ -63,9 +63,10 @@ while the :py:class:`RegulateAmount` abstract base class has subtypes
 - :py:class:`IncreaseAmount`
 - :py:class:`DecreaseAmount`
 
-Statements involve one or more biological *Agents*, typically proteins,
-represented by the class :py:class:`Agent`. Agents can have several types
-of context specified on them including
+Statements involve one or more *Concepts*, which, depending on the
+semantics of the Statement, are typically biological *Agents*,
+such as proteins, represented by the class :py:class:`Agent`.
+Agents can have several types of context specified on them including
 
 - a specific post-translational modification state (indicated by one or
   more instances of :py:class:`ModCondition`),
@@ -133,6 +134,7 @@ import sys
 import uuid
 import rdflib
 import logging
+from copy import deepcopy
 from collections import OrderedDict as _o
 from indra.util import unicode_strs
 import indra.databases.hgnc_client as hgc
@@ -340,7 +342,8 @@ class ModCondition(object):
         if self.is_modified != other.is_modified:
             return False
         type_match = (self.mod_type == other.mod_type or
-            mod_hierarchy.isa('INDRA', self.mod_type, 'INDRA', other.mod_type))
+            mod_hierarchy.isa('INDRA_MODS', self.mod_type,
+                              'INDRA_MODS', other.mod_type))
         residue_match = (self.residue == other.residue or
             (self.residue is not None and other.residue is None))
         pos_match = (self.position == other.position or
@@ -445,8 +448,8 @@ class ActivityCondition(object):
             return False
         if self.activity_type == other.activity_type:
             return True
-        if activity_hierarchy.isa('INDRA', self.activity_type,
-                                  'INDRA', other.activity_type):
+        if activity_hierarchy.isa('INDRA_ACTIVITIES', self.activity_type,
+                                  'INDRA_ACTIVITIES', other.activity_type):
             return True
 
     def equals(self, other):
@@ -494,7 +497,108 @@ class ActivityCondition(object):
 
 
 @python_2_unicode_compatible
-class Agent(object):
+class Concept(object):
+    """A concept/entity of interest that is the argument of a Statement
+
+    Parameters
+    ----------
+    name : str
+        The name of the concept, possibly a canonicalized name.
+    db_refs : dict
+        Dictionary of database identifiers associated with this concept.
+    """
+    def __init__(self, name, db_refs=None):
+        self.name = name
+        self.db_refs = db_refs if db_refs else {}
+
+    def matches(self, other):
+        return self.matches_key() == other.matches_key()
+
+    def matches_key(self):
+        key = self.entity_matches_key()
+        return str(key)
+
+    def entity_matches(self, other):
+        return self.entity_matches_key() == other.entity_matches_key()
+
+    def entity_matches_key(self):
+        # Get the grounding first
+        db_ns, db_id = self.get_grounding()
+        # If there's no grounding, just use the name as key
+        if not db_ns and not db_id:
+            return self.name
+        return str((db_ns, db_id))
+
+    def equals(self, other):
+        matches = (self.name == other.name) and \
+                  (self.db_refs == other.db_refs)
+        return matches
+
+    def get_grounding(self):
+        # Prioritize anything that is other than TEXT
+        db_names = sorted(list(set(self.db_refs.keys()) - set(['TEXT'])))
+        db_ns = db_names[0] if db_names else None
+        db_id = self.db_refs[db_ns] if db_ns else None
+        # If the db_id is actually a list of scored groundings, we take the
+        # highest scoring one.
+        if isinstance(db_id, list):
+            if not db_id:
+                db_id = None
+            else:
+                db_id = sorted(db_id, key=lambda x: x[1], reverse=True)[0][0]
+        # If there is no db_id then we actually reset the db_ns to None
+        # to make sure we don't consider this a potential isa
+        if db_id is None:
+            db_ns = None
+        return (db_ns, db_id)
+
+    def isa(self, other, hierarchies):
+        # Get the namespaces for the comparison
+        (self_ns, self_id) = self.get_grounding()
+        (other_ns, other_id) = other.get_grounding()
+        # If one of the agents isn't grounded to a relevant namespace,
+        # there can't be an isa relationship
+        if not all((self_ns, self_id, other_ns, other_id)):
+            return False
+        # Check for isa relationship
+        return hierarchies['entity'].isa(self_ns, self_id, other_ns, other_id)
+
+    def refinement_of(self, other, hierarchies):
+        # Make sure the Agent types match
+        if type(self) != type(other):
+            return False
+
+        # Check that the basic entity of the agent either matches or is related
+        # to the entity of the other agent. If not, no match.
+        # If the entities, match, then we can continue
+        if not (self.entity_matches(other) or self.isa(other, hierarchies)):
+            return False
+        return True
+
+    def to_json(self):
+        json_dict = _o({'name': self.name})
+        json_dict['db_refs'] = self.db_refs
+        return json_dict
+
+    @classmethod
+    def _from_json(cls, json_dict):
+        name = json_dict.get('name')
+        db_refs = json_dict.get('db_refs', {})
+        if not name:
+            logger.error('Concept missing name.')
+            return None
+        concept = Concept(name, db_refs=db_refs)
+        return concept
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return str(self)
+
+
+@python_2_unicode_compatible
+class Agent(Concept):
     """A molecular entity, e.g., a protein.
 
     Parameters
@@ -519,7 +623,7 @@ class Agent(object):
     def __init__(self, name, mods=None, activity=None,
                  bound_conditions=None, mutations=None,
                  location=None, db_refs=None):
-        self.name = name
+        super(Agent, self).__init__(name, db_refs=db_refs)
 
         if mods is None:
             self.mods = []
@@ -547,21 +651,26 @@ class Agent(object):
         self.activity = activity
         self.location = get_valid_location(location)
 
-        if db_refs is None:
-            self.db_refs = {}
-        else:
-            self.db_refs = db_refs
-
-    def matches(self, other):
-        return self.matches_key() == other.matches_key()
-
     def matches_key(self):
+        """Return a key to identify the identity and state of the Agent."""
+        key = (self.entity_matches_key(),
+               self.state_matches_key())
+        return str(key)
+
+    def entity_matches_key(self):
+        """Return a key to identify the identity of the Agent not its state."""
+        db_refs_key = 'FPLX:%s;UP:%s;HGNC:%s' % (self.db_refs.get('FPLX'),
+                                                 self.db_refs.get('UP'),
+                                                 self.db_refs.get('HGNC'))
+        return str((self.name, db_refs_key))
+
+    def state_matches_key(self):
+        """Return a key to identify the state of the Agent."""
         # NOTE: Making a set of the mod matches_keys might break if
         # you have an agent with two phosphorylations at serine
         # with unknown sites.
         act_key = (self.activity.matches_key() if self.activity else None)
-        key = (self.entity_matches_key(),
-               sorted([m.matches_key() for m in self.mods]),
+        key = (sorted([m.matches_key() for m in self.mods]),
                sorted([m.matches_key() for m in self.mutations]),
                act_key, self.location,
                len(self.bound_conditions),
@@ -569,15 +678,6 @@ class Agent(object):
                      for bc in sorted(self.bound_conditions,
                                       key=lambda x: x.agent.name)))
         return str(key)
-
-    def entity_matches(self, other):
-        return self.entity_matches_key() == other.entity_matches_key()
-
-    def entity_matches_key(self):
-        db_refs_key = 'FPLX:%s;UP:%s;HGNC:%s' % (self.db_refs.get('FPLX'),
-                                                 self.db_refs.get('UP'),
-                                                 self.db_refs.get('HGNC'))
-        return str((self.name, db_refs_key))
 
     # Function to get the namespace to look in
     def get_grounding(self):
@@ -611,7 +711,8 @@ class Agent(object):
         if not all((self_ns, self_id, other_ns, other_id)):
             return False
         # Check for isa relationship
-        return hierarchies['entity'].isa(self_ns, self_id, other_ns, other_id)
+        return hierarchies['entity'].isa_or_partof(self_ns, self_id, other_ns,
+                                                   other_id)
 
     def refinement_of(self, other, hierarchies):
         # Make sure the Agent types match
@@ -713,7 +814,8 @@ class Agent(object):
             # If the other location is part of this location then
             # self.location is not a refinement
             if not hierarchies['cellular_component'].partof(
-               'INDRA', self.location, 'INDRA', other.location):
+               'INDRA_LOCATIONS', self.location,
+               'INDRA_LOCATIONS', other.location):
                 return False
 
         # ACTIVITY
@@ -819,9 +921,6 @@ class Agent(object):
         attr_str = ', '.join(attr_strs)
         agent_name = self.name
         return '%s(%s)' % (agent_name, attr_str)
-
-    def __repr__(self):
-        return str(self)
 
 
 @python_2_unicode_compatible
@@ -955,6 +1054,15 @@ class Statement(object):
     def matches(self, other):
         return self.matches_key() == other.matches_key()
 
+    def agent_list_with_bound_condition_agents(self):
+        # Returns the list of agents both directly participating in the
+        # statement and referenced through bound conditions.
+        l = self.agent_list()
+        for a in self.agent_list():
+            bc_agents = [bc.agent for bc in a.bound_conditions]
+            l.extend(bc_agents)
+        return l
+
     def entities_match(self, other):
         self_key = self.entities_match_key()
         other_key = other.entities_match_key()
@@ -1002,6 +1110,10 @@ class Statement(object):
         else:
             return False
         return True
+
+    def contradicts(self, other, hierarchies):
+        # Placeholder for implementation in subclasses
+        return False
 
     def to_json(self):
         """Return serialized Statement as a json dict."""
@@ -1094,6 +1206,26 @@ class Statement(object):
         json_node(graph, jd, ['%s' % self.uuid])
         return graph
 
+    def make_generic_copy(self, deeply=False):
+        """Make a new matching Statement with no provenance.
+
+        All agents and other attributes besides evidence, belief, supports, and
+        supported_by will be copied over, and a new uuid will be assigned.
+        Thus, the new Statement will satisfy `new_stmt.matches(old_stmt)`.
+
+        If `deeply` is set to True, all the attributes will be deep-copied,
+        which is comparatively slow. Otherwise, attributes of this statement
+        may be altered by changes to the new matching statement.
+        """
+        if deeply:
+            kwargs = deepcopy(self.__dict__)
+        else:
+            kwargs = self.__dict__.copy()
+        for attr in ['evidence', 'belief', 'uuid', 'supports', 'supported_by',
+                     'is_activation']:
+            kwargs.pop(attr, None)
+        return self.__class__(**kwargs)
+
 
 @python_2_unicode_compatible
 class Modification(Statement):
@@ -1174,6 +1306,31 @@ class Modification(Statement):
         matches = (matches and (self.residue == other.residue)
                    and (self.position == other.position))
         return matches
+
+    def contradicts(self, other, hierarchies):
+        # If the modifications are not the opposite polarity of the
+        # same subtype
+        if not modclass_to_inverse[self.__class__] == other.__class__:
+            return False
+        # Skip all instances of not fully specified modifications
+        agents = (self.enz, self.sub, other.enz, other.sub)
+        if not all(a is not None for a in agents):
+            return False
+        # If the entities don't match, they can't be contradicting
+        # Here we check pairs of agents at each "position" and
+        # make sure they are the same or they are refinements of each other
+        for self_agent, other_agent in zip(self.agent_list(),
+                                           other.agent_list()):
+            if not (self_agent.entity_matches(other_agent) or \
+                    self_agent.refinement_of(other_agent, hierarchies) or \
+                    other_agent.refinement_of(self_agent, hierarchies)):
+                return False
+        # At this point the entities definitely match so we need to
+        # check the specific site that is being modified
+        if self.residue == other.residue and self.position == other.position:
+            return True
+        else:
+            return False
 
     def _get_mod_condition(self):
         """Return a ModCondition corresponding to this Modification."""
@@ -1542,14 +1699,40 @@ class RegulateActivity(Statement):
         if self.subj.refinement_of(other.subj, hierarchies) and \
            self.obj.refinement_of(other.obj, hierarchies):
             obj_act_match = (self.obj_activity == other.obj_activity) or \
-                hierarchies['activity'].isa('INDRA', self.obj_activity,
-                                            'INDRA', other.obj_activity)
+                hierarchies['activity'].isa('INDRA_ACTIVITIES',
+                                            self.obj_activity,
+                                            'INDRA_ACTIVITIES',
+                                            other.obj_activity)
             if obj_act_match:
                 return True
             else:
                 return False
         else:
             return False
+
+    def contradicts(self, other, hierarchies):
+        # If they aren't opposite classes, it's not a contradiction
+        if {self.__class__, other.__class__} != {Activation, Inhibition}:
+            return False
+
+        # If they aren't opposite classes, it's not a contradiction
+        if self.is_activation == other.is_activation:
+            return False
+        # Skip all instances of not fully specified statements
+        agents = (self.subj, self.obj, other.subj, other.obj)
+        if not all(a is not None for a in agents):
+            return False
+        # If the entities don't match, they can't be contradicting
+        # Here we check pairs of agents at each "position" and
+        # make sure they are the same or they are refinements of each other
+        for self_agent, other_agent in zip(self.agent_list(),
+                                           other.agent_list()):
+            if not (self_agent.entity_matches(other_agent) or \
+                    self_agent.refinement_of(other_agent, hierarchies) or \
+                    other_agent.refinement_of(self_agent, hierarchies)):
+                return False
+        # Otherwise they are contradicting
+        return True
 
     def to_json(self):
         generic = super(RegulateActivity, self).to_json()
@@ -1740,11 +1923,38 @@ class ActiveForm(Statement):
         # Make sure that the relationships and activities match
         if (self.is_active == other.is_active) and \
             (self.activity == other.activity
-             or hierarchies['activity'].isa('INDRA', self.activity,
-                                            'INDRA', other.activity)):
+             or hierarchies['activity'].isa('INDRA_ACTIVITIES', self.activity,
+                                            'INDRA_ACTIVITIES', other.activity)):
                 return True
         else:
             return False
+
+    def contradicts(self, other, hierarchies):
+        # Make sure the statement types match
+        if type(self) != type(other):
+            return False
+        # Check that the polarity is constradicting up front
+        # TODO: we could also check for cases where the polarities are
+        # the same but some of the state conditions have opposite
+        # polarities, for instance, if the presence/lack of the
+        # same modification activates a given agent, that could be
+        # considered a contradiction.
+        if self.is_active == other.is_active:
+            return False
+        # Check that the activity types are the same
+        # TODO: we could check for refinements here
+        if self.activity != other.activity:
+            return False
+        # If the agents are exactly the same, this is a contradiction
+        if self.agent.matches_key() == other.agent.matches_key():
+            return True
+        # Otherwise, if the two agents are related at the level of entities
+        # and their state is exactly the same, then they contradict
+        if self.agent.state_matches_key() == other.agent.state_matches_key():
+            if self.agent.isa(other.agent, hierarchies) or \
+                other.agent.isa(self.agent, hierarchies):
+                return True
+        return False
 
     def to_json(self):
         generic = super(ActiveForm, self).to_json()
@@ -2166,12 +2376,12 @@ class Translocation(Statement):
         ref1 = self.agent.refinement_of(other.agent, hierarchies)
         ref2 = (other.from_location is None or
                 self.from_location == other.from_location or
-                ch.partof('INDRA', self.from_location,
-                          'INDRA', other.from_location))
+                ch.partof('INDRA_LOCATIONS', self.from_location,
+                          'INDRA_LOCATIONS', other.from_location))
         ref3 = (other.to_location is None or
                 self.to_location == other.to_location or
-                ch.partof('INDRA', self.to_location,
-                          'INDRA', other.to_location))
+                ch.partof('INDRA_LOCATIONS', self.to_location,
+                          'INDRA_LOCATIONS', other.to_location))
         return (ref1 and ref2 and ref3)
 
     def equals(self, other):
@@ -2293,6 +2503,27 @@ class RegulateAmount(Statement):
         matches = super(RegulateAmount, self).equals(other)
         return matches
 
+    def contradicts(self, other, hierarchies):
+        # If they aren't opposite classes, it's not a contradiction
+        if {self.__class__, other.__class__} != \
+            {IncreaseAmount, DecreaseAmount}:
+            return False
+        # Skip all instances of not fully specified statements
+        agents = (self.subj, self.obj, other.subj, other.obj)
+        if not all(a is not None for a in agents):
+            return False
+        # If the entities don't match, they can't be contradicting
+        # Here we check pairs of agents at each "position" and
+        # make sure they are the same or they are refinements of each other
+        for self_agent, other_agent in zip(self.agent_list(),
+                                           other.agent_list()):
+            if not (self_agent.entity_matches(other_agent) or \
+                    self_agent.refinement_of(other_agent, hierarchies) or \
+                    other_agent.refinement_of(self_agent, hierarchies)):
+                return False
+        # Otherwise they are contradicting
+        return True
+
     def __str__(self):
         s = ("%s(%s, %s)" % (type(self).__name__, self.subj, self.obj))
         return s
@@ -2336,9 +2567,9 @@ class Influence(IncreaseAmount):
 
     Parameters
     ----------
-    subj : :py:class:`indra.statement.Agent`
+    subj : :py:class:`indra.statement.Concept`
         The concept which acts as the influencer.
-    obj : :py:class:`indra.statement.Agent`
+    obj : :py:class:`indra.statement.Concept`
         The concept which acts as the influencee
     subj_delta : Optional[dict]
         A dictionary specifying the polarity and magnitude of
@@ -2358,6 +2589,67 @@ class Influence(IncreaseAmount):
             obj_delta = {'polarity': None, 'adjectives': []}
         self.subj_delta = subj_delta
         self.obj_delta = obj_delta
+
+    def refinement_of(self, other, hierarchies):
+        def delta_refinement(dself, dother):
+            # Polarities are either equal
+            if dself['polarity'] == dother['polarity']:
+                pol_refinement = True
+            # Or this one has a polarity and the other doesn't
+            elif dself['polarity'] is not None and dother['polarity'] is None:
+                pol_refinement = True
+            else:
+                pol_refinement = False
+
+            # If other's adjectives are a subset of this
+            if set(dother['adjectives']).issubset(set(dself['adjectives'])):
+                adj_refinement = True
+            else:
+                adj_refinement = False
+            return pol_refinement and adj_refinement
+
+        # Make sure the statement types match
+        if type(self) != type(other):
+            return False
+
+        # Check agent arguments
+        subj_refinement = self.subj.refinement_of(other.subj, hierarchies)
+        obj_refinement = self.obj.refinement_of(other.obj, hierarchies)
+        subjd_refinement = delta_refinement(self.subj_delta, other.subj_delta)
+        objd_refinement = delta_refinement(self.obj_delta, other.obj_delta)
+        return (subj_refinement and obj_refinement and
+                subjd_refinement and objd_refinement)
+
+    def equals(self, other):
+        def delta_equals(dself, dother):
+            if (dself['polarity'] == dother['polarity']) and \
+                (set(dself['adjectives']) == set(dother['adjectives'])):
+                return True
+            else:
+                return False
+        matches = super(Influence, self).equals(other) and \
+            delta_equals(self.subj_delta, other.subj_delta) and \
+            delta_equals(self.obj_delta, other.obj_delta)
+        return matches
+
+    def matches_key(self):
+        key = (type(self), self.subj.matches_key(),
+               self.obj.matches_key(),
+               self.subj_delta['polarity'],
+               sorted(list(set(self.subj_delta['adjectives']))),
+               self.obj_delta['polarity'],
+               sorted(list(set(self.obj_delta['adjectives']))))
+        return str(key)
+
+    def contradicts(self, other, hierarchies):
+        if self.entities_match(other) or \
+            self.refinement_of(other, hierarchies) or \
+            other.refinement_of(self, hierarchies):
+            sp = self.overall_polarity()
+            op = other.overall_polarity()
+            if sp and op and sp * op == -1:
+                return True
+        return False
 
     def overall_polarity(self):
         # Set p1 and p2 to None / 1 / -1 depending on polarity
@@ -2394,9 +2686,9 @@ class Influence(IncreaseAmount):
         subj_delta = json_dict.get('subj_delta')
         obj_delta = json_dict.get('obj_delta')
         if subj:
-            subj = Agent._from_json(subj)
+            subj = Concept._from_json(subj)
         if obj:
-            obj = Agent._from_json(obj)
+            obj = Concept._from_json(obj)
         stmt = cls(subj, obj, subj_delta, obj_delta)
         return stmt
 
@@ -2408,7 +2700,7 @@ class Influence(IncreaseAmount):
             return self.__str__().encode('utf-8')
 
     def __str__(self):
-        def _influence_agent_str(agent, delta):
+        def _influence_concept_str(concept, delta):
             if delta is not None:
                 pol = delta.get('polarity')
                 if pol == 1:
@@ -2417,13 +2709,15 @@ class Influence(IncreaseAmount):
                     pol_str = 'negative'
                 else:
                     pol_str = ''
-                agent_str = '%s(%s)' % (agent.name, pol_str)
+                concept_str = '%s(%s)' % (concept.name, pol_str)
             else:
-                agent_str = agent.name
-            return agent_str
+                concept_str = concept.name
+            return concept_str
         s = ("%s(%s, %s)" % (type(self).__name__,
-                             _influence_agent_str(self.subj, self.subj_delta),
-                             _influence_agent_str(self.obj, self.obj_delta)))
+                             _influence_concept_str(self.subj,
+                                                    self.subj_delta),
+                             _influence_concept_str(self.obj,
+                                                    self.obj_delta)))
         return s
 
 
@@ -2601,28 +2895,29 @@ def stmts_from_json(json_in, on_missing_support='handle'):
     Statement objects from the json, where possible. The method of handling
     missing support is controled by the `on_missing_support` key-word argument.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     json_in : json list
         A json list containing json dict representations of INDRA Statements,
         as produced by the `to_json` methods of subclasses of Statement, or
         equivalently by `stmts_to_json`.
-    on_missing_support : str
+    on_missing_support : Optional[str]
         Handles the behavior when a uuid reference in `supports` or
         `supported_by` attribute cannot be resolved. This happens because uuids
         can only be linked to Statements contained in the `json_in` list, and
         some may be missing if only some of all the Statements from pre-
         assembly are contained in the list.
 
-        Options are:
-            'handle' - (default) convert unresolved uuids into `Unresolved`
-                Statement objects.
-            'ignore' - Simply omit any uuids that cannot be linked to any
-                Statements in the list.
-            'error' - Raise an error upon hitting an un-linkable uuid.
+        Options:
 
-    Returns:
-    --------
+        - *'handle'* : (default) convert unresolved uuids into `Unresolved`
+          Statement objects.
+        - *'ignore'* : Simply omit any uuids that cannot be linked to any
+          Statements in the list.
+        - *'error'* : Raise an error upon hitting an un-linkable uuid.
+
+    Returns
+    -------
     stmts : list[:py:class:`Statement`]
         A list of INDRA Statements.
     """
@@ -2684,7 +2979,7 @@ def get_valid_location(location):
 def _read_activity_types():
     """Read types of valid activities from a resource file."""
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    ac_file = this_dir + '/resources/activity_hierarchy.rdf'
+    ac_file = os.path.abspath(this_dir + '/resources/activity_hierarchy.rdf')
     g = rdflib.Graph()
     with open(ac_file, 'r'):
         g.parse(ac_file, format='nt')

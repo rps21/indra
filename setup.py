@@ -3,18 +3,43 @@ use_setuptools()
 from setuptools import setup
 import sys
 
-
 def main():
     # Only install functools32 if we're in Python 2 (it's not available
     # for Python 3)
     install_list = ['pysb>=1.3.0', 'objectpath', 'rdflib==4.2.1',
                     'requests>=2.11', 'lxml', 'ipython', 'future',
-                    'networkx==1.11', 'pandas', 'kappy']
+                    'networkx==1.11', 'pandas']
+    # We implicitly require numpy since pandas depends on numpy
     if sys.version_info[0] == 2:
         install_list.append('functools32')
 
+    extras_require = {
+                      # Inputs and outputs
+                      'biopax': ['jnius-indra'],
+                      'trips_offline': ['pykqml'],
+                      'reach_offline': ['jnius-indra'],
+                      'eidos_offline': ['pyyaml', 'jnius-indra'],
+                      'geneways': ['stemming', 'nltk'],
+                      'sofia': ['openpyxl'],
+                      'bbn': ['rdflib-jsonld'],
+                      'ndex': ['ndex2'],
+                      'bel': ['pybel'],
+                      # Tools and analysis
+                      'machine': ['pytz', 'tzlocal', 'tweepy', 'ndex2',
+                                  'pyyaml', 'click'],
+                      'explanation': ['kappy==4.0.0rc1'],
+                      # AWS interface and database
+                      'aws': ['boto3'],
+                      'db': ['sqlalchemy', 'boto3'],
+                      # Utilities
+                      'graph': ['pygraphviz'],
+                      'plot': ['matplotlib'],
+                      }
+    extras_require['all'] = list({dep for deps in extras_require.values()
+                                  for dep in deps})
+
     setup(name='indra',
-          version='1.6.0',
+          version='1.7.0',
           description='Integrated Network and Dynamical Reasoning Assembler',
           long_description='INDRA is a framework '
               'for assembling rule-based mathematical models and '
@@ -29,9 +54,11 @@ def main():
                     'indra.literature', 'indra.mechlinker',
                     'indra.preassembler', 'indra.sources',
                     'indra.sources.bbn', 'indra.sources.bel',
-                    'indra.sources.biopax', 'indra.sources.eidos',
+                    'indra.sources.biopax', 'indra.sources.cwms',
+                    'indra.sources.eidos',
                     'indra.sources.geneways', 'indra.sources.index_cards',
                     'indra.sources.ndex_cx', 'indra.sources.reach',
+                    'indra.sources.sofia',
                     'indra.sources.sparser', 'indra.sources.tees',
                     'indra.sources.trips', 'indra.resources',
                     'indra.resources.famplex', 'indra.tests',
@@ -43,6 +70,7 @@ def main():
                     'indra.tools.machine', 'indra.util'],
           install_requires=install_list,
           tests_require=['jnius-indra', 'jsonschema', 'coverage', 'matplotlib'],
+          extras_require=extras_require,
           include_package_data=True,
           keywords=['systems', 'biology', 'model', 'pathway', 'assembler',
                     'nlp', 'mechanism', 'biochemistry', 'network'],
@@ -58,9 +86,6 @@ def main():
             'Topic :: Scientific/Engineering :: Chemistry',
             'Topic :: Scientific/Engineering :: Mathematics',
             ],
-          extras_require={'machine': ['pytz', 'tzlocal', 'tweepy', 'ndex2',
-                                      'pyyaml', 'click'],
-                          'bbn': ['rdflib-jsonld']},
           entry_points={'console_scripts':
                         ['indra-machine = indra.tools.machine.cli:main']}
         )
