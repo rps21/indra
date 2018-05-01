@@ -87,7 +87,7 @@ def add_receptor_ligand_activeform_improved(stmts):
                 rec_ag = deepcopy(ag) 
         if lig_ag:
             rec_ag.bound_conditions = [BoundCondition(lig_ag)]
-            af_stmt = ActiveForm(rec_ag,activity='kinase',is_active=True)
+            af_stmt = ActiveForm(rec_ag,activity='activity',is_active=True)
             new_af_stmts.append(af_stmt)
             lig_ag = None
     new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts)
@@ -145,7 +145,7 @@ def add_modification_active_form(stmt, upstream_list):
             af_agent = deepcopy(ag)
             af_mods = [stmt._get_mod_condition()] #need to enclose in list 
             af_agent.mods = af_mods
-            af_stmt = ActiveForm(af_agent,activity='kinase',is_active=True)  #Kinase here is too specific. May be able to take any string
+            af_stmt = ActiveForm(af_agent,activity='activity',is_active=True)  #Kinase here is too specific. May be able to take any string
             new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
     return new_af_stmts #, new_downstream_list
 
@@ -163,7 +163,7 @@ def add_complex_active_form(stmt, upstream_list):
     if af_agent is not None:
         af_boundconditions = [BoundCondition(previous_agent)]
         af_agent.bound_conditions = af_boundconditions
-        af_stmt = ActiveForm(af_agent,activity='kinase',is_active=True)
+        af_stmt = ActiveForm(af_agent,activity='activity',is_active=True)
         new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
     return new_af_stmts 
 

@@ -18,6 +18,7 @@ from indra.assemblers import pysb_assembler as pa
 from indra.tools.expand_families import _agent_from_uri
 from collections import Counter
 from indra.util.kappa_util import im_json_to_graph
+import textwrap
 
 try:
     import paths_graph as pg
