@@ -154,7 +154,6 @@ class SignorProcessor(object):
         self.no_mech_ctr = sorted([(k, v) for k, v in no_mech_ctr.items()],
                                   key=lambda x: x[1], reverse=True)
 
-<<<<<<< Updated upstream:indra/sources/signor/processor.py
         # Add a Complex statement for each Signor complex
         for complex_id in sorted(self.complex_map.keys()):
             agents = self._get_complex_agents(complex_id)
