@@ -238,10 +238,6 @@ class MechLinker(object):
                     continue
                 ag_base = self._get_base(binding_ag) 
                 active_forms = ag_base.get_active_forms()
-                print('ag_base is %s' % ag_base)
-                print('type of ag_base is %s' % type(ag_base))
-                print('base afs are %s' % active_forms)
-                print('type of base afs is %s' % type(active_forms))
                 if not active_forms:
                     new_stmts.append(stmt)
                 else:

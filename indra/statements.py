@@ -3116,10 +3116,10 @@ def get_valid_residue(residue):
     """Check if the given string represents a valid amino acid residue."""
     if residue is not None and amino_acids.get(residue) is None:
         res = amino_acids_reverse.get(residue.lower())
-        if res is None:
-            raise InvalidResidueError(residue)
-        else:
-            return res
+#        if res is None:
+#            raise InvalidResidueError(residue)
+#        else:
+#            return res
     return residue
 
 
