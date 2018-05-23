@@ -2,6 +2,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 from builtins import dict, str
 from copy import deepcopy
 import pickle
+import os
 from indra.preassembler.hierarchy_manager import hierarchies
 from indra.tools import assemble_corpus as ac
 from indra.statements import *
@@ -53,7 +54,8 @@ def find_agent(stmts, input_list):
 
 def find_rec_lig(stmts):
     #Requires dict of receptor-ligand pairs, should store this somewhere better
-    with open('/home/bobby/Dropbox/Sorger_Lab/BigMech/reporting_and_eval/phase3_eval_pt2/dynamical_model/model_building/lig_rec_dict.pkl','rb') as f:
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    with open(dir_path+'/lig_rec_dict.pkl','rb') as f:
         receptor_dict = pickle.load(f)
 
     new_af_stmts = []
