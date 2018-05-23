@@ -51,7 +51,7 @@ reach_stmts = ac.load_statements('model_stmts/filter_gene_list.pkl')
 trips_stmts = ac.load_statements('model_stmts/trips_output.pkl')
 biopax_stmts = ac.load_statements('model_stmts/biopax_output.pkl')
 filteredSignorStmts = ac.load_statements('model_stmts/signor_stmts_list.pkl')
-stmts = reach_stmts + biopax_stmts + trips_stmts + filteredSignorStmts
+stmts = reach_stmts + biopax_stmts + trips_stmts + filteredSignorStmts  #Probably need to up date signor stmts 
 
 
 
@@ -96,12 +96,17 @@ def cleanStatements(stmts):
     return stmts
 
 
+#New filter, because of errors that arrise from none agents
+stmts = [st for st in stmts if None not in st.agent_list()]
+
 largeModelStmts = cleanStatements(stmts)
 smallModelRawStmts = ac.filter_gene_list(stmts,model_genes,'all')
 smallModelStmts = cleanStatements(smallModelRawStmts)
 
-
-
+###############################################
+#Add context modifications to stmt lists
+#Need more work to assess necessity/affect on sif file generation 
+#################################################
 
 #Coarse grain phos and add binding context, interpretting as activationsfrom indra.tools.small_model_tools import enforceCascadeContext as cs
 from indra.tools.small_model_tools import enforceCascadeContext as cs
@@ -116,53 +121,69 @@ smallModelStmts_contextChanges = cs.run_mechlinker_step_reduced(newstmts, uplist
 smallModelStmts_contextChanges = ptm.coarse_grain_phos(newstmts)
 
 
+
+
+
+
+#######################################################
+#Add manual stmts for Sorafenib interactions 
+#May want to check these for complex vs inhibition
+########################################################
+
+
 #Add statements for Sorafenib Targets
 drugTargetStmts = ac.load_statements('sorafenibTargetStmts.pkl')
 largeModelStmts = largeModelStmts + drugTargetStmts
 #largeModelStmts_contextChanges = largeModelStmts_contextChanges + drugTargetStmts
-smallModelStmts = smallModelStmts + drugTargetStmts
 smallModelStmts_contextChanges = smallModelStmts_contextChanges + drugTargetStmts
 
+
+
+#####################################################
+#Final processing/cleanup
+#Deduplication, removing inconsequential mods
+######################################################
 
 largeModelStmts = Preassembler.combine_duplicate_stmts(largeModelStmts)
 #largeModelStmts_contextChanges = Preassembler.combine_duplicate_stmts(largeModelStmts_contextChanges)
 #largeModelStmts_contextChanges = ac.filter_inconsequential_mods(largeModelStmts_contextChanges)
 
-smallModelStmts = Preassembler.combine_duplicate_stmts(smallModelStmts)
 smallModelStmts_contextChanges = Preassembler.combine_duplicate_stmts(smallModelStmts_contextChanges)
 smallModelStmts_contextChanges = ac.filter_inconsequential_mods(smallModelStmts_contextChanges)
 
-#### Testing for modelchecker
 
 
-#Save four final statment lists
-ac.dump_statements(largeModelStmts,'finalLargeModelStmts.pkl')
-ac.dump_statements(smallModelStmts,'finalSmallModelStmts.pkl')
-#ac.dump_statements(largeModelStmts,'largeModelStmts_contextChanges.pkl')
-ac.dump_statements(smallModelStmts_contextChanges,'smallModelStmts_contextChanges.pkl')
+#######################
+# Save stmts 
+#######################
 
-#Assemble and save four PySB models
-pa = PysbAssembler()
-pa.add_statements(largeModelStmts)
-largeModel = pa.make_model()
-with open('largePYSBModel.pkl','wb') as f:
-    pickle.dump(largeModel,f)
+##Save four final statment lists
+#ac.dump_statements(largeModelStmts,'finalLargeModelStmts.pkl')
+##ac.dump_statements(largeModelStmts,'largeModelStmts_contextChanges.pkl')
+#ac.dump_statements(smallModelStmts_contextChanges,'smallModelStmts_contextChanges.pkl')
 
-pa = PysbAssembler()
-pa.add_statements(smallModelStmts)
-smallModel = pa.make_model()
-with open('smallPYSBModel.pkl','wb') as f:
-    pickle.dump(smallModel,f)
+
+#############################
+#Build and save PySB models 
+##############################
+
 
 #pa = PysbAssembler()
-#pa.add_statements(largeModelStmts_contextChanges)
+#pa.add_statements(largeModelStmts)
 #largeModel = pa.make_model()
-#with open('largePYSBModel_contextChanges.pkl','wb') as f:
+#with open('largePYSBModel.pkl','wb') as f:
 #    pickle.dump(largeModel,f)
 
-pa = PysbAssembler()
-pa.add_statements(smallModelStmts_contextChanges)
-smallModelContext = pa.make_model()
-with open('smallPYSBModel_contextChanges.pkl','wb') as f:
-    pickle.dump(smallModelContext,f)
+
+##pa = PysbAssembler()
+##pa.add_statements(largeModelStmts_contextChanges)
+##largeModel = pa.make_model()
+##with open('largePYSBModel_contextChanges.pkl','wb') as f:
+##    pickle.dump(largeModel,f)
+
+#pa = PysbAssembler()
+#pa.add_statements(smallModelStmts_contextChanges)
+#smallModelContext = pa.make_model()
+#with open('smallPYSBModel_contextChanges.pkl','wb') as f:
+#    pickle.dump(smallModelContext,f)
 
