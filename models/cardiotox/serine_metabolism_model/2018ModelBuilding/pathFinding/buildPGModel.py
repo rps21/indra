@@ -1,6 +1,6 @@
 from indra.assemblers import PysbAssembler
 from indra.assemblers import SifAssembler
-from indra.explanation import paths_graph as pg
+import paths_graph as pg
 from indra.tools import assemble_corpus as ac
 
 #with open('smallModelStmts_contextChanges.pkl','rb') as f:
@@ -92,8 +92,9 @@ target = 'AKT1'
 target_polarity=0
 length=1
 
-import timeit
-timeit.timeit(paths = pg.api.sample_paths(g,source,target,max_depth=10,num_samples=10,cycle_free=True,signed=False,target_polarity=0))
+#import timeit
+#timeit.timeit(paths = pg.api.sample_paths(g,source,target,max_depth=10,num_samples=10,cycle_free=True,signed=False,target_polarity=0))
+paths = pg.api.sample_paths(g,source,target,max_depth=10,num_samples=10,cycle_free=True,signed=False,target_polarity=0)
 #check sif directionality. May be adding lines in both directions for complexes. Finding a way around this may be tricky, but would be a big  help. 
 #timeit failed - probably can't set a variable. But took roughly 25 min by indra output
 
@@ -111,4 +112,11 @@ ac.dump_statements(largeModelStmts_contextChanges,'newLargeModelStmts_contextCha
 
 #mc = model_checker.ModelChecker(model=model,statements=testStmt)
 #results = mc.check_model()
+
+
+
+
+
+
+
 
