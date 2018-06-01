@@ -43,7 +43,7 @@ from indra.tools.small_model_tools import combinePhosphorylationSites as ptm
 
 newstmts, uplist, downlist = cs.add_all_af(testModelStmts)     
 final_stmts = cs.run_mechlinker_step_reduced(newstmts, uplist, downlist)
-#stmts_to_use = deepcopy(final_stmts)
+ #stmts_to_use = deepcopy(final_stmts)
 #newStmts = ptm.coarse_grain_phos(stmts_to_use)
 
 pa = PysbAssembler()
