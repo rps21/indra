@@ -5,7 +5,9 @@ from nose.tools import raises
 
 from indra.statements import *
 from indra.sources.medscan.processor import *
+from indra.sources.medscan.processor import _urn_to_db_refs
 from indra.sources.medscan.api import *
+from indra.sources.medscan.processor import ProteinSiteInfo
 
 # Path to the Medscan test/dummy data folder
 path_this = os.path.dirname(os.path.abspath(__file__))
@@ -19,47 +21,72 @@ def test_urn_to_db_refs():
 
     # agi-cas
     urn1 = 'urn:agi-cas:89-73-6'
-    db_refs_1 = urn_to_db_refs(urn1)
+    db_refs_1, _ = _urn_to_db_refs(urn1)
     assert(db_refs_1 == {'CHEBI': 'CHEBI:45615'})
 
     # agi-llid
     urn2 = 'urn:agi-llid:9451'
-    db_refs_2 = urn_to_db_refs(urn2)
+    db_refs_2, hgnc_name = _urn_to_db_refs(urn2)
     assert(db_refs_2 == {'HGNC': '3255', 'UP': 'Q9NZJ5'})
+    assert(hgnc_name == 'EIF2AK3')
 
     # agi-ncimorgan
     urn3 = 'urn:agi-ncimorgan:C0012144'
-    db_refs_3 = urn_to_db_refs(urn3)
+    db_refs_3, _ = _urn_to_db_refs(urn3)
     assert(db_refs_3 == {'MESH': 'C0012144'})
 
     # agi-nicmcelltype
     urn4 = 'urn:agi-ncimcelltype:C0242633'
-    db_refs_4 = urn_to_db_refs(urn4)
+    db_refs_4, _ = _urn_to_db_refs(urn4)
     assert(db_refs_4 == {'MESH': 'C0242633'})
 
     # agi-meshdist
     urn5 = 'urn:agi-meshdis:Paramyotonia%20Congenita'
-    db_refs_5 = urn_to_db_refs(urn5)
+    db_refs_5, _ = _urn_to_db_refs(urn5)
     assert(db_refs_5 == {'MESHDIS': 'Paramyotonia%20Congenita'})
 
     # agi-gocomplex
     urn6 = 'urn:agi-gocomplex:0005610'
-    db_refs_6 = urn_to_db_refs(urn6)
-    assert(db_refs_6 == {'GO': 'GO:0005610'})
+    db_refs_6, _ = _urn_to_db_refs(urn6)
+    assert(db_refs_6 == {'GO': 'GO:0005610', 'FPLX': 'Laminin_332'})
 
     # agi-go
     urn7 = 'urn:agi-go:0001515'
-    db_refs_7 = urn_to_db_refs(urn7)
+    db_refs_7, _ = _urn_to_db_refs(urn7)
     assert(db_refs_7 == {'GO': 'GO:0001515'})
 
     # agi-ncimtissue
     urn8 = 'urn:agi-ncimtissue:C0007807'
-    db_refs_8 = urn_to_db_refs(urn8)
+    db_refs_8, _ = _urn_to_db_refs(urn8)
     assert(db_refs_8 == {'MESH': 'C0007807'})
+
+    # Do we ground to Famplex when there is a correspondence between a GO
+    # id and a Famplex id?
+    urn9 = 'urn:agi-go:0000776'
+    db_refs_9, _ = _urn_to_db_refs(urn9)
+    assert(db_refs_9 == {'GO': 'GO:0000776', 'FPLX': 'Kinetochore'})
+
+    # Do we ground to Famplex when there is a correspondence between a MESH
+    # id and a Famplex id?
+    urn10 = 'urn:agi-ncimcelltype:D000199'
+    db_refs_10, _ = _urn_to_db_refs(urn10)
+    assert(db_refs_10 == {'MESH': 'D000199', 'FPLX': 'Actin'})
+
+    # If the urn corresponds to an eccode, do we ground to famplex if that
+    # eccode is in the Famplex equivalences table?
+    urn11 = 'urn:agi-enz:1.1.1.1'
+    db_refs_11, _ = _urn_to_db_refs(urn11)
+    assert(db_refs_11 == {'FPLX': 'ADH'})
+
+    # Do we check the Famplex equivalences table to see if a raw Medscan URN
+    # maps to a Famplex ID?
+    urn11 = 'urn:agi-aopfc:0000105'
+    db_refs_11, _ = _urn_to_db_refs(urn11)
+    assert(db_refs_11 == {'FPLX': 'GATA'})
 
 
 def test_agent_from_entity():
-    mp = MedscanProcessor(None)
+    mp = MedscanProcessor()
 
     # Test entity
     entity = MedscanEntity(name='kinesin-I',
@@ -93,7 +120,7 @@ def test_agent_from_entity():
 
 def test_expressioncontrol_positive():
     fname = os.path.join(data_folder, 'test_ExpressionControl_positive.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 2)
@@ -108,7 +135,7 @@ def test_expressioncontrol_positive():
 def test_evidence():
     # Test that evidence object is created correctly
     fname = os.path.join(data_folder, 'test_ExpressionControl_positive.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 2)
@@ -128,7 +155,7 @@ def test_evidence():
 
 def test_molsynthesis_positive():
     fname = os.path.join(data_folder, 'test_MolSynthesis-positive.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 1)
@@ -143,7 +170,7 @@ def test_molsynthesis_positive():
 
 def test_expressioncontrol_negative():
     fname = os.path.join(data_folder, 'test_ExpressionControl_negative.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 1)
@@ -158,7 +185,7 @@ def test_expressioncontrol_negative():
 
 def test_molsynthesis_negative():
     fname = os.path.join(data_folder, 'test_MolSynthesis-negative.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 1)
@@ -173,7 +200,7 @@ def test_molsynthesis_negative():
 
 def test_binding():
     fname = os.path.join(data_folder, 'test_Binding.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 1)
@@ -192,7 +219,7 @@ def test_binding():
 
 def test_phosphorylate():
     fname = os.path.join(data_folder, 'test_Phosphorylate.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 1)
@@ -200,14 +227,41 @@ def test_phosphorylate():
     s0 = statements[0]
     assert(isinstance(s0, Phosphorylation))
 
-    assert(s0.enz.db_refs == {'HGNC': '1974', 'TEXT': 'IKK alpha',
-                              'UP': 'O15111'})
+    assert(s0.enz.db_refs == {'GO': 'GO:0005610', 'FPLX': 'Laminin_332',
+                              'TEXT': 'IKK alpha'})
+    assert(s0.enz.name == 'Laminin_332')  # agent name is FPLX when available
     assert(s0.sub.db_refs == {'HGNC': '6120', 'TEXT': 'IRF-5', 'UP': 'Q13568'})
+
+
+def test_activation():
+    fname = os.path.join(data_folder, 'test_Activation.csxml')
+    mp = process_file(fname, None)
+
+    statements = mp.statements
+    assert(len(statements) == 1)
+
+    s0 = statements[0]
+    assert(type(s0) == Activation)
+    assert(s0.subj.name == 'Laminin_332')
+    assert(s0.obj.name == 'IRF-5 dimers')
+
+
+def test_inhibition():
+    fname = os.path.join(data_folder, 'test_Inhibition.csxml')
+    mp = process_file(fname, None)
+
+    statements = mp.statements
+    assert(len(statements) == 1)
+
+    s0 = statements[0]
+    assert(type(s0) == Inhibition)
+    assert(repr(s0.subj) == 'DNMT3A(mods: (methylation, R, 882))')
+    assert(repr(s0.obj) == 'cell differentiation()')
 
 
 def test_dephosphorylate():
     fname = os.path.join(data_folder, 'test_Dephosphorylate.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 1)
@@ -223,7 +277,7 @@ def test_dephosphorylate():
 
 def test_protein_mutation():
     fname = os.path.join(data_folder, 'test_Protein_Mutation.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 1)
@@ -251,7 +305,7 @@ def test_protein_mutation():
 
 def test_protein_methsite():
     fname = os.path.join(data_folder, 'test_Protein_MethSite.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 1)
@@ -278,7 +332,7 @@ def test_protein_methsite():
 
 def test_protein_phosphosite():
     fname = os.path.join(data_folder, 'test_Protein_PhosphoSite.csxml')
-    mp = process_file(fname, None, None)
+    mp = process_file(fname, None)
 
     statements = mp.statements
     assert(len(statements) == 1)
@@ -299,3 +353,36 @@ def test_protein_phosphosite():
     assert(obj.db_refs == {'CHEBI': 'CHEBI:15351', 'TEXT': 'acetyl-CoA'})
     assert(len(obj.mutations) == 0)
     assert(len(obj.mods) == 0)
+
+
+def test_handle_duplicates():
+    # Does the processor detect duplicate SVOs within the same sentence?
+    fname = os.path.join(data_folder, 'test_duplicate_SVO.csxml')
+    mp = process_file(fname, None)
+
+    statements = mp.statements
+    assert(len(statements) == 1)
+
+
+def test_modification_site():
+    # Can we detect the modification site and residue in a modification
+    # event?
+    fname = os.path.join(data_folder, 'test_modification_site.csxml')
+    mp = process_file(fname, None)
+
+    statements = mp.statements
+    assert(len(statements) == 1)
+
+    s0 = statements[0]
+    assert(s0.residue == 'K')
+    assert(s0.position == '8')
+
+
+def test_site_text_parser():
+    si = ProteinSiteInfo('S10 and S20 residues', None)
+    sites = si.get_sites()
+    assert(len(sites) == 2)
+    assert(sites[0].residue == 'S')
+    assert(sites[0].position == '10')
+    assert(sites[1].residue == 'S')
+    assert(sites[1].position == '20')

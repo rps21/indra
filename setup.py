@@ -27,13 +27,14 @@ def main():
                       # Tools and analysis
                       'machine': ['pytz', 'tzlocal', 'tweepy', 'ndex2',
                                   'pyyaml', 'click'],
-                      'explanation': ['kappy==4.0.0rc1'],
+                      'explanation': ['kappy==4.0.0rc1', 'paths-graph'],
                       # AWS interface and database
                       'aws': ['boto3'],
                       'db': ['sqlalchemy', 'boto3'],
                       # Utilities
                       'graph': ['pygraphviz'],
                       'plot': ['matplotlib'],
+                      'isi': ['nltk']
                       }
     extras_require['all'] = list({dep for deps in extras_require.values()
                                   for dep in deps})
@@ -50,13 +51,14 @@ def main():
           url='http://github.com/sorgerlab/indra',
           packages=['indra', 'indra.assemblers', 'indra.belief',
                     'indra.benchmarks', 'indra.databases', 'indra.db',
-                    'indra.explanation', 'indra.explanation.paths_graph',
+                    'indra.explanation',
                     'indra.literature', 'indra.mechlinker',
                     'indra.preassembler', 'indra.sources',
                     'indra.sources.bbn', 'indra.sources.bel',
                     'indra.sources.biopax', 'indra.sources.cwms',
                     'indra.sources.eidos',
                     'indra.sources.geneways', 'indra.sources.index_cards',
+                    'indra.sources.indra_db_rest',
                     'indra.sources.ndex_cx', 'indra.sources.reach',
                     'indra.sources.sofia',
                     'indra.sources.sparser', 'indra.sources.tees',

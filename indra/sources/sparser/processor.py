@@ -75,6 +75,10 @@ class SparserJSONProcessor(object):
             if isinstance(stmt, Modification):
                 if stmt.sub is None:
                     continue
+            # Skip Complexes with less than 2 members
+            if isinstance(stmt, Complex):
+                if len(stmt.members) < 2:
+                    continue
 
             # Step 4: Fix Agent names and grounding
             for agent in stmt.agent_list():
@@ -157,6 +161,12 @@ def _fix_agent(agent):
             hgnc_id = hgnc_client.get_hgnc_id(gene_name)
             if hgnc_id:
                 agent.db_refs['HGNC'] = hgnc_id
+        # If it doesn't have a gene name, it's better to just
+        # use the raw string name otherwise Sparser sets
+        # has Uniprot IDs or mnemonics as the name
+        else:
+            name = agent.db_refs.get('TEXT', agent.name)
+            agent.name = name
 
 
 class SparserXMLProcessor(object):

@@ -568,8 +568,8 @@ def test_conversion_refinement():
 
 
 def test_influence_duplicate():
-    gov = 'entities/human/nation/government'
-    agr = 'entities/human/livelihood/agriculture'
+    gov = 'UN/entities/human/government/government_entity'
+    agr = 'UN/entities/natural/crop_technology'
     cgov = Concept('government', db_refs={'EIDOS': [(gov, 1.0)]})
     cagr = Concept('agriculture', db_refs={'EIDOS': [(agr, 1.0)]})
     stmt1 = Influence(cgov, cagr, evidence=[Evidence(source_api='eidos1')])
@@ -582,17 +582,17 @@ def test_influence_duplicate():
     pa = Preassembler(hierarchies, [stmt1, stmt2, stmt3])
     unique_stmts = pa.combine_duplicates()
     assert len(unique_stmts) == 2
-    assert len(unique_stmts[0].evidence) == 1
-    assert len(unique_stmts[1].evidence) == 2
-    sources = [e.source_api for e in unique_stmts[1].evidence]
+    assert len(unique_stmts[0].evidence) == 2
+    assert len(unique_stmts[1].evidence) == 1
+    sources = [e.source_api for e in unique_stmts[0].evidence]
     assert set(sources) == set(['eidos1', 'eidos3'])
 
 
 def test_influence_refinement():
-    tran = 'entities/human/infrastructure/transportation'
-    truck = 'entities/human/infrastructure/transportation/' + \
-        'transportation_methods/trucking'
-    agr = 'entities/human/livelihood/agriculture'
+    tran = 'UN/entities/human/infrastructure/transportation'
+    truck = 'UN/entities/human/infrastructure/transportation/' + \
+        'transportation_methods'
+    agr = 'UN/entities/human/livelihood'
     ctran = Concept('transportation', db_refs={'EIDOS': [(tran, 1.0)]})
     ctruck = Concept('trucking', db_refs={'EIDOS': [(truck, 1.0)]})
     cagr = Concept('agriculture', db_refs={'EIDOS': [(agr, 1.0)]})
@@ -622,4 +622,19 @@ def test_find_contradicts():
     for s1, s2 in contradicts:
         assert {s1.uuid, s2.uuid} in ({st1.uuid, st2.uuid},
                                       {st3.uuid, st4.uuid})
+
+
+def test_preassemble_related_complex():
+    ras = Agent('RAS', db_refs={'FPLX': 'RAS'})
+    kras = Agent('KRAS', db_refs={'HGNC': '6407'})
+    hras = Agent('HRAS', db_refs={'HGNC': '5173'})
+    st1 = Complex([kras, hras])
+    st2 = Complex([kras, ras])
+    st3 = Complex([hras, kras])
+    st4 = Complex([ras, kras])
+    pa = Preassembler(hierarchies, [st1, st2, st3, st4])
+    uniq = pa.combine_duplicates()
+    assert len(uniq) == 2
+    top = pa.combine_related()
+    assert len(top) == 1
 

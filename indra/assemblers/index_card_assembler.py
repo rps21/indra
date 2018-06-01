@@ -8,7 +8,7 @@ from indra.databases import hgnc_client, uniprot_client, chebi_client
 
 logger = logging.getLogger('index_card_assembler')
 
-global_submitter = 'cure'
+global_submitter = 'indra'
 
 class IndexCardAssembler(object):
     """Assembler creating index cards from a set of INDRA Statements.
@@ -62,7 +62,7 @@ class IndexCardAssembler(object):
             else:
                 continue
             if card is not None:
-                card.card['meta'] = {'id': stmt.uuid}
+                card.card['meta'] = {'id': stmt.uuid, 'belief': stmt.belief}
                 if self.pmc_override is not None:
                     card.card['pmc_id'] = self.pmc_override
                 else:

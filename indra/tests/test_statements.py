@@ -1141,6 +1141,21 @@ def test_mismatched_complex_refinement():
     assert not st2.refinement_of(st1, hierarchies)
 
 
+def test_related_complex_refinement():
+    ras = Agent('RAS', db_refs={'FPLX': 'RAS'})
+    kras = Agent('KRAS', db_refs={'HGNC': '6407'})
+    hras = Agent('HRAS', db_refs={'HGNC': '5173'})
+    st1 = Complex([kras, hras])
+    st2 = Complex([kras, ras])
+    st3 = Complex([hras, kras])
+    st4 = Complex([ras, kras])
+    assert st1.refinement_of(st2, hierarchies)
+    assert st3.refinement_of(st4, hierarchies)
+    assert st1.refinement_of(st4, hierarchies)
+    assert not st2.refinement_of(st1, hierarchies)
+    assert not st4.refinement_of(st1, hierarchies)
+
+
 @raises(InvalidResidueError)
 def test_residue_mod_condition():
     ModCondition('phosphorylation', 'xyz')
@@ -1774,3 +1789,12 @@ def test_active_form_contradicts():
     assert not st1.contradicts(st3, hierarchies)
     assert not st3.contradicts(st4, hierarchies)
     assert not st1.contradicts(st4, hierarchies)
+
+
+def test_agent_list_with_bound_condition_agents():
+    eg = Agent('EGFR', bound_conditions=[BoundCondition(Agent('EGF'), True)])
+    stmt = Phosphorylation(None, eg)
+    agents = stmt.agent_list_with_bound_condition_agents()
+    assert agents[0] is None
+    assert agents[1].name == 'EGFR'
+    assert agents[2].name == 'EGF'

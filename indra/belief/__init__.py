@@ -4,7 +4,11 @@ import numpy
 import networkx
 import logging
 
-from indra.sources.reach.processor import determine_reach_subtype
+try:
+    from indra.sources.reach.processor import determine_reach_subtype
+    use_reach_subtypes = True
+except ImportError:
+    use_reach_subtypes = False
 
 logger = logging.getLogger("belief")
 
@@ -14,9 +18,11 @@ default_probs = {
         'bel': 0.1,
         'trips': 0.3,
         'reach': 0.3,
+        'isi': 0.3,
         'eidos': 0.3,
         'bbn': 0.3,
         'cwms': 0.3,
+        'sofia': 0.3,
         'biogrid': 0.01,
         'sparser': 0.3,
         'r3': 0.1,
@@ -30,9 +36,11 @@ default_probs = {
         'bel': 0.01,
         'trips': 0.05,
         'reach': 0.05,
+        'isi': 0.05,
         'eidos': 0.05,
         'bbn': 0.05,
         'cwms': 0.05,
+        'sofia': 0.05,
         'biogrid': 0.01,
         'sparser': 0.05,
         'r3': 0.05,
@@ -94,6 +102,9 @@ class BeliefEngine(object):
             be calculated. Each Statement object's belief attribute is updated
             by this function.
         """
+        if not use_reach_subtypes:
+            logger.info('Belief engine could not import REACH subtypes, they '
+                        'will be ignored.')
         self._check_prior_probs(statements)
         for st in statements:
             sources = [ev.source_api for ev in st.evidence]
@@ -283,7 +294,10 @@ def tag_evidence_subtype(evidence):
         subtype = annotations.get('source_sub_id')
     elif source_api == 'reach':
         if 'found_by' in annotations:
-            subtype = determine_reach_subtype(annotations['found_by'])
+            if use_reach_subtypes:
+                subtype = determine_reach_subtype(annotations['found_by'])
+            else:
+                subtype = None
         else:
             logger.warning('Could not find found_by attribute in reach '
                            'statement annoations')

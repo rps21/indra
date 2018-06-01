@@ -23,7 +23,7 @@ modifications that further inherit from
 - :py:class:`Phosphorylation`
 - :py:class:`Dephosphorylation`
 - :py:class:`Ubiquitination`
-- :py:class:`Debiquitination`
+- :py:class:`Deubiquitination`
 - :py:class:`Sumoylation`
 - :py:class:`Desumoylation`
 - :py:class:`Hydroxylation`
@@ -123,6 +123,31 @@ The evidence for a given Statement, which could include relevant citations,
 database identifiers, and passages of text from the scientific literature, is
 contained in one or more :py:class:`Evidence` objects associated with the
 Statement.
+
+
+JSON serialization of INDRA Statements
+--------------------------------------
+
+Statements can be serialized into JSON and deserialized from JSON to allow
+their exchange in a platform-independent way. We also provide a JSON
+schema (see http://json-schema.org to learn about schemas) in
+https://raw.githubusercontent.com/sorgerlab/indra/master/indra/resources/statements_schema.json
+which can be used to validate INDRA Statements JSONs.
+
+Some validation tools include:
+
+- jsonschema
+    a Python package to validate JSON content with respect to
+    a schema
+- ajv-cli
+    Available at https://www.npmjs.com/package/ajv-cli
+    Install with "npm install -g ajv-cli" and then validate with:
+    ajv -s statements_schema.json -d file_to_validate.json. This tool
+    provides more sophisticated and better interpretable output than
+    jsonschema.
+- Web based tools
+    There are a variety of web-based tools for validation with JSON schemas,
+    including https://www.jsonschemavalidator.net
 """
 
 from __future__ import absolute_import, print_function, unicode_literals
@@ -134,6 +159,7 @@ import sys
 import uuid
 import rdflib
 import logging
+import itertools
 from copy import deepcopy
 from collections import OrderedDict as _o
 from indra.util import unicode_strs
@@ -539,6 +565,8 @@ class Concept(object):
         db_names = sorted(list(set(self.db_refs.keys()) - set(['TEXT'])))
         db_ns = db_names[0] if db_names else None
         db_id = self.db_refs[db_ns] if db_ns else None
+        if db_ns == 'BBN' and db_id in ('Factor', 'Entities/Factor'):
+            return (None, None)
         # If the db_id is actually a list of scored groundings, we take the
         # highest scoring one.
         if isinstance(db_id, list):
@@ -1059,8 +1087,9 @@ class Statement(object):
         # statement and referenced through bound conditions.
         l = self.agent_list()
         for a in self.agent_list():
-            bc_agents = [bc.agent for bc in a.bound_conditions]
-            l.extend(bc_agents)
+            if a is not None:
+                bc_agents = [bc.agent for bc in a.bound_conditions]
+                l.extend(bc_agents)
         return l
 
     def entities_match(self, other):
@@ -1094,6 +1123,8 @@ class Statement(object):
             return str(self).encode('utf-8')
 
     def equals(self, other):
+        if type(self) != type(other):
+            return False
         if len(self.agent_list()) == len(other.agent_list()):
             for s, o in zip(self.agent_list(), other.agent_list()):
                 if (s is None and o is not None) or \
@@ -2298,18 +2329,37 @@ class Complex(Statement):
         if len(self.members) != len(other.members):
             return False
         # Check that every member in other is refined in self, but only once!
-        self_match_indices = set([])
-        for other_agent in other.members:
-            for self_agent_ix, self_agent in enumerate(self.members):
-                if self_agent_ix in self_match_indices:
-                    continue
-                if self_agent.refinement_of(other_agent, hierarchies):
-                    self_match_indices.add(self_agent_ix)
-                    break
-        if len(self_match_indices) != len(other.members):
+
+        def match_members(self_members, other_members):
+            # Build all the permutations of the other complex's members
+            other_member_perms = \
+                itertools.permutations(other_members, len(other_members))
+            # Compare self with all orders of other
+            for other_member_perm in other_member_perms:
+                self_match_indices = set([])
+                # See if each of the members in other has a corresponding
+                # member in self
+                for other_agent in other_member_perm:
+                    for self_agent_ix, self_agent in enumerate(self_members):
+                        # This is when the agent is already matched so we
+                        # don't want to match it (use it) again
+                        if self_agent_ix in self_match_indices:
+                            continue
+                        # If self member is a refinement of other, record
+                        # self's index to make sure we know it's matched
+                        # and don't match it again
+                        if self_agent.refinement_of(other_agent, hierarchies):
+                            self_match_indices.add(self_agent_ix)
+                            break
+                # If we matches all self members to other members, this is
+                # a refinement and we can return
+                if len(self_match_indices) == len(other_members):
+                    return True
+            # If none of the orderings resulted in refinement then this
+            # is not a refinement
             return False
-        else:
-            return True
+
+        return match_members(self.members, other.members)
 
     def equals(self, other):
         matches = super(Complex, self).equals(other)
@@ -3190,14 +3240,16 @@ class NotAStatementName(Exception):
     pass
 
 
-def make_statement_camel(stmt_name):
-    """Makes a statement name match the case of the corresponding statement."""
+def get_statement_by_name(stmt_name):
+    """Get a statement class given the name of the statement class."""
     stmt_classes = get_all_descendants(Statement)
     for stmt_class in stmt_classes:
         if stmt_class.__name__.lower() == stmt_name.lower():
-            ret = stmt_class.__name__
-            break
-    else:
-        raise NotAStatementName('%s is not recognized as a statement.'
-                                % stmt_name)
-    return ret
+            return stmt_class
+    raise NotAStatementName('%s is not recognized as a statement type: %s'
+                            % stmt_name)
+
+
+def make_statement_camel(stmt_name):
+    """Makes a statement name match the case of the corresponding statement."""
+    return get_statement_by_name(stmt_name).__name__

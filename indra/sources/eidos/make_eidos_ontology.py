@@ -5,6 +5,8 @@ from rdflib import Graph, Namespace, Literal
 
 eidos_ont_url = 'https://raw.githubusercontent.com/clulab/eidos/master/' + \
                 'src/main/resources/org/clulab/wm/eidos/toy_ontology.yml'
+eidos_ont_url = 'https://raw.githubusercontent.com/clulab/eidos/master/' + \
+                'src/main/resources/org/clulab/wm/eidos/un_ontology.yml'
 
 eidos_ns = Namespace('https://github.com/clulab/eidos/wiki/JSON-LD/Grounding#')
 indra_ns = 'http://sorger.med.harvard.edu/indra/'
@@ -37,10 +39,13 @@ def build_relations(G, node, tree, prefix):
             child = entry
         elif isinstance(entry, dict):
             child = list(entry.keys())[0]
-            build_relations(G, child, entry[child], this_prefix)
-        child_term = get_term(child, this_prefix)
-        rel = (child_term, isa, this_term)
-        G.add(rel)
+            if child != 'examples':
+                build_relations(G, child, entry[child], this_prefix)
+
+        if child != 'examples':
+            child_term = get_term(child, this_prefix)
+            rel = (child_term, isa, this_term)
+            G.add(rel)
 
 
 if __name__ == '__main__':
