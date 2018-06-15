@@ -72,6 +72,20 @@ def find_rec_lig(stmts):
     rec_list = list(set(rec_list))
     return lig_names, rec_names, lig_list, rec_list
 
+#This can probably be done with mechlinker but i can't figure it out 
+#HERE
+#def remove_rec_lig_activation(lig_names,rec_names,stmts):
+#    act_stmts = ac.filter_by_type(stmts,Activation)
+#    output_stmts = ac.filter_by_type(stmts,Activation,invert=True)
+
+#    for st in act_stmts:
+#        agents = [ag.name for ag in st.agent_list()]
+#        if agents[0]#lig and rec in agents 
+#    
+#        else:
+#            output_stmts.append(st)
+
+#    return output_stmts
 
 
 def add_receptor_ligand_activeform_improved(stmts):
@@ -79,7 +93,7 @@ def add_receptor_ligand_activeform_improved(stmts):
     new_af_stmts = []
     lig_names, rec_names, lig_list, rec_list = find_rec_lig(stmts)
     rec_lig_stmts = ac.filter_gene_list(stmts,rec_names+lig_names,'all')
-    
+    toRemove = ac.filter_by_type(rec_lig_stmts,Activation)
     for st in rec_lig_stmts:
         for ag in st.agent_list():
             #This step could probably be combined with find_rec_lig(). Should find a way to find pairs of lig-rec instead of individual lists
@@ -93,8 +107,45 @@ def add_receptor_ligand_activeform_improved(stmts):
             new_af_stmts.append(af_stmt)
             lig_ag = None
     new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts)
-    output_stmts = stmts + new_af_stmts
+    output_stmts1 = stmts + new_af_stmts
+    output_stmts = [st for st in output_stmts1 if st not in toRemove]
     return output_stmts, lig_list, rec_list
+
+
+
+#Check if there's a phosphorylation. 
+#if not, no change, bound condition is af 
+#if there is need bound condtion -> phos 
+#phos is active form. 
+#cs comes before ptm, so need to deal with the multiple phos sites expanding number of statements
+
+
+#def add_receptor_ligand_activeform_improved(stmts):
+#    lig_ag = []
+#    new_af_stmts = []
+#    lig_names, rec_names, lig_list, rec_list = find_rec_lig(stmts)
+#    rec_lig_stmts = ac.filter_gene_list(stmts,rec_names+lig_names,'all')
+#    
+##    try:
+##        phosStmts = ac.filter_by_type(output_stmts,Phosphorylation)
+
+
+##    except TypeError:
+#        for st in rec_lig_stmts:
+#            for ag in st.agent_list():
+#                #This step could probably be combined with find_rec_lig(). Should find a way to find pairs of lig-rec instead of individual lists
+#                if ag.name in lig_names:
+#                    lig_ag = deepcopy(ag) 
+#                if ag.name in rec_names:
+#                    rec_ag = deepcopy(ag) 
+#            if lig_ag:
+#                rec_ag.bound_conditions = [BoundCondition(lig_ag)]
+#                af_stmt = ActiveForm(rec_ag,activity='activity',is_active=True)
+#                new_af_stmts.append(af_stmt)
+#                lig_ag = None
+#        new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts)
+#        output_stmts = stmts + new_af_stmts
+#        return output_stmts, lig_list, rec_list
 
 
 
@@ -234,6 +285,7 @@ def add_all_af(stmts):
 
     #First, handle receptors
     updated_stmts, lig_list, rec_list = add_receptor_ligand_activeform_improved(stmts)
+    rec_names = [rec.name for rec in rec_list]
 
     upstream_list = lig_list
     downstream_list = rec_list
@@ -260,7 +312,7 @@ def add_all_af(stmts):
         downstream_list = new_downstream_list
         upstream_list = new_upstream_list   
 
-    outputStmts = reduce_complex_activeforms(outputStmts) 
+    outputStmts = reduce_complex_activeforms(outputStmts,rec_names) 
     outputStmts = combine_multiple_phos_activeforms(outputStmts)
 
     return outputStmts, downstream_list_total, upstream_list_total
@@ -283,18 +335,15 @@ def run_mechlinker_step_reduced(stmts,downstream_list,upstream_list):
         ml.gather_explicit_activities() #Why was this commented out?
         ml.gather_modifications()
         ml.require_active_forms() #THIS IS KEY
-#        print(stmts)
-#        print(downstream_list)
-#        print(upstream_list)
-#        print(updated_stmts)
 
     output_stmts = ml.statements
     return output_stmts
 
 
 ###################
+#HERE!!!! - need exception for receptor-ligand binding being active form, discard phos. 
 #If an agent has active forms for both bound and modification conditions, only keep mods
-def reduce_complex_activeforms(stmts):
+def reduce_complex_activeforms(stmts,rec_names):
     new_af_stmts = []
     af_stmts = ac.filter_by_type(stmts,ActiveForm)
     stmts_to_keep = ac.filter_by_type(stmts,ActiveForm,invert=True)
@@ -307,22 +356,79 @@ def reduce_complex_activeforms(stmts):
         ag_af_stmts = ac.filter_by_type(ag_stmts,ActiveForm)
         #all af statements for this agent 
         #Can I replace this whole block with 1-2 one liners?
-        if(any([st.agent.mods for st in ag_af_stmts])): #if there are any mod AFs, going to ignore bound_conditions
-            for st in ag_af_stmts:
-                if st.agent.mods:
-                    st.agent.bound_conditions = [] #This may be a terrible idea. Also should be copying
-                    stmts_to_keep.append(st)
-                elif st.is_active == False:
-                    stmts_to_keep.append(st)
+        
+        #NEW - 6-8-18
+        #Instead of tossing phos and keeping lig binding
+        #Keep phos as af 
+        #write new phos statement, requiring ligand bound for phosphorylation
+        #probably need to somehow collect all stmts for rec is phosphorylated and make sure all are correct/replaced 
+
+        if ag.name in rec_names:
+#            if(any([st.agent.bound_conditions for st in ag_af_stmts])): #if there are any bound_condition AFs for receptor, ignore mods 
+#                for st in ag_af_stmts:
+#                    if st.agent.bound_conditions:
+#                        st2 = deepcopy(st)
+#                        st2.agent.mods = [] #This may be a terrible idea. Also should be copying
+#                        stmts_to_keep.append(st2)
+
+#                    elif st.is_active == False:
+#                        stmts_to_keep.append(deepcopy(st))
+            print('Starting active forms for receptor are %s' % ag_af_stmts)
+
+
+            if(any([st.agent.mods for st in ag_af_stmts]) and any([st.agent.bound_conditions for st in ag_af_stmts])): #now I'm going to try keeping phos as af, but keep phos and lig binding tightly controlled
+                for st in ag_af_stmts:
+
+                    boundConditions_saved = deepcopy(st.agent.bound_conditions) #save bound conditions for receptor to add back in next step 
+                    st2 = deepcopy(st)
+                    st2.agent.bound_conditions = [] #Lignad binding here How to get/specifiy ligand?
+                    stmts_to_keep.append(st2)
+
+                phosRecStmts_all = ac.filter_by_type(stmts_to_keep,Phosphorylation)     #acting directly on stmts_to_keep and modifying stmts seems dangerous
+                phosRecStmts_self = []#ac.filter_gene_list(phosRecStmts_all,[ag.name],'all')   #.enz.bound_conditions[0].agent.name
+                for st in phosRecStmts_all:
+                    if st.enz.name==ag.name and st.sub.name==ag.name:
+                        phosRecStmts_self.append(st)
+                ac.dump_statements(phosRecStmts_all,'phosRecStmts_all.pkl')
+                for st in phosRecStmts_self:
+                    st.enz.bound_conditions = boundConditions_saved
+                    st.enz.mods = []
+                    ac.dump_statements([st],'recPhosStmts.pkl')
+
+            elif (any([st.agent.mods for st in ag_af_stmts])): #Is this needed? do i also need a bound condition version?
+                for st in ag_af_stmts:
+                    if st.agent.bound_conditions:
+                        st2 = deepcopy(st)
+                        st2.agent.bound_conditions = []#Lignad binding here How to get/specifiy ligand?
+                        stmts_to_keep.append(st2)
+                        #rewrite phosphorylation stmts to have ligand binding 
+
+                    elif st.is_active == False:
+                        stmts_to_keep.append(deepcopy(st))
+
+
+
         else:
-            stmts_to_keep = stmts_to_keep + ag_af_stmts
+            if(any([st.agent.mods for st in ag_af_stmts])): #if there are any mod AFs, going to ignore bound_conditions
+                for st in ag_af_stmts:
+                    if st.agent.mods:
+                        st2 = deepcopy(st)
+                        st2.agent.bound_conditions = [] #This may be a terrible idea. Also should be copying
+                        stmts_to_keep.append(st2)
+                    elif st.is_active == False:
+                        stmts_to_keep.append(deepcopy(st))
+            else:
+                stmts_to_keep = stmts_to_keep + ag_af_stmts
+
     output_stmts =  stmts_to_keep
+#    print(ac.filter_by_type(output_stmts,ActiveForm))
     return output_stmts
 
 
 #Making multiple phos af's 'and' gated
 #Can loop through all proteins (going to be very slow) and pull out all af statements for a given protein
 
+#HERE!!!! - somehow adding bs empty pdgfra af statement
 def combine_multiple_phos_activeforms(stmts):
     new_af_stmts = []
     af_stmts = ac.filter_by_type(stmts,ActiveForm)
@@ -343,19 +449,20 @@ def combine_multiple_phos_activeforms(stmts):
                 output_stmts.append(st)
             else:
                 all_mods = all_mods + st.agent.mods
-        new_mods = []
-        for mod in all_mods:
-            if not any(list(map(lambda obj: obj.matches(mod), new_mods))):
-                new_mods.append(mod)
-        if any([mod.residue for mod in all_mods]):
-            #remove any mods with no residue
-            new_mods = [mod for mod in all_mods if mod.residue] 
+        if all_mods:
+            new_mods = []
+            for mod in all_mods:
+                if not any(list(map(lambda obj: obj.matches(mod), new_mods))):
+                    new_mods.append(mod)
+            if any([mod.residue for mod in all_mods]):
+                #remove any mods with no residue
+                new_mods = [mod for mod in all_mods if mod.residue] 
 
-        af_agent = deepcopy(ag)
-        af_mods = new_mods
-        af_agent.mods = af_mods
-        new_afstmt = ActiveForm(af_agent,activity='kinase',is_active=True)
-        new_af_stmts.append(new_afstmt)
-        output_stmts = new_af_stmts + output_stmts
+            af_agent = deepcopy(ag)
+            af_mods = new_mods
+            af_agent.mods = af_mods
+            new_afstmt = ActiveForm(af_agent,activity='kinase',is_active=True)
+            new_af_stmts.append(new_afstmt)
+            output_stmts = new_af_stmts + output_stmts
     return output_stmts
 

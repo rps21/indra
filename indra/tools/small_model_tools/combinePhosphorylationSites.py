@@ -126,10 +126,17 @@ def replace_ptms(stmts,name,dictionary):
                     pos = entry.split(',')[2].strip().strip(')')
                 except IndexError:
                     pos = None
-                try: 
-                    res = entry.split(',')[1].strip()
-                except IndexError:
-                    res = None
+                if pos:
+                    try: 
+                        res = entry.split(',')[1].strip()
+                    except IndexError:
+                        res = None
+                else:
+                    try: 
+                        res = entry.split(',')[1].strip().strip(')')
+                    except IndexError:
+                        res = None
+
 
                 if st.sub.name == name and st.residue == res and st.position == pos:   
                     st.residue = dictionary[str(entry)]
