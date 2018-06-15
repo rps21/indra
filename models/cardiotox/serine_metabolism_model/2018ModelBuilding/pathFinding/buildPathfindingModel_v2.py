@@ -9,6 +9,8 @@ from indra.sources import biopax
 from indra.sources import trips
 from indra.tools.gene_network import GeneNetwork
 from indra.preassembler import Preassembler
+from indra.tools.small_model_tools import enforceCascadeContext as cs
+from indra.tools.small_model_tools import combinePhosphorylationSites as ptm
 
 
 def normalize_active_forms(stmts):
@@ -73,7 +75,7 @@ def cleanStatements(stmts):
     ml.reduce_activities()
     ml.gather_modifications()
     ml.reduce_modifications()
-    stmts = normalize_active_forms(ml.statements)
+#    stmts = normalize_active_forms(ml.statements)
     # Replace activations when possible
     ml = MechLinker(stmts)
     ml.gather_explicit_activities()
@@ -102,6 +104,47 @@ stmts = [st for st in stmts if None not in st.agent_list()]
 largeModelStmts = cleanStatements(stmts)
 smallModelRawStmts = ac.filter_gene_list(stmts,model_genes,'all')
 smallModelStmts = cleanStatements(smallModelRawStmts)
+
+#sorafStmts = ac.load_statements('sorafenibTargetStmts2.pkl')
+#sorafStmts = ac.map_grounding(sorafStmts)
+#smallModelStmts = smallModelStmts + sorafStmts
+
+ac.dump_statements(smallModelStmts,'smallModelStmts.pkl')
+ac.dump_statements(largeModelStmts,'largeModelStmts.pkl')
+
+
+
+prelimSmallStmts = ac.load_statements('smallModelStmts.pkl')
+
+#newstmts, uplist, downlist = cs.add_all_af(prelimSmallStmts)     
+#newstmts = cs.run_mechlinker_step_reduced(newstmts, uplist, downlist)
+#prelimSmallStmts_contextChanges = ptm.coarse_grain_phos(newstmts)
+#prelimSmallStmts_contextChanges = Preassembler.combine_duplicate_stmts(prelimSmallStmts_contextChanges)
+
+
+
+
+##def fixDrugStmts(stmts,drugList):
+##    outputStmts = []
+##    stmtsCopy = deepcopy(stmts)
+##    for st in stmtsCopy:
+##        for ag in st.agent_list():
+##            if ag.name in drugList:
+##                ag.mods = []
+##                #binding conditions?
+##        outputStmts.append(st)
+##    return outputStmts
+
+##finalSmallStmts = fixDrugStmts(prelimSmallStmts_contextChanges,['SORAFENIB'])
+
+
+
+#finalSorafStmts = ac.load_statements('finalSorafStmts.pkl')
+#finalSmallStmts = prelimSmallStmts_contextChanges + finalSorafStmts
+#finalSmallStmts = ac.map_grounding(finalSmallStmts)
+
+
+#ac.dump_statements(finalSmallStmts,'finalSmallStmts.pkl')
 
 ###############################################
 #Add context modifications to stmt lists
