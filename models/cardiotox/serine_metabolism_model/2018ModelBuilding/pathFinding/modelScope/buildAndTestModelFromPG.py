@@ -119,7 +119,6 @@ def buildModel(paths,stmts,nodes=None,save=False,fn='./modelStmts.pkl'):
     #Need to handle this better, but for now just add relevant ligands
     #Also need drug and newly added phosphatase in the final model, not sure best place to add that, here for now 
     ligands = ['PDGF','FLT3LG','PDGFA','SORAFENIB','GenericPhosphatase']
-#    ligands = ['FLT3LG']
     uniqueNodes = uniqueNodes + ligands
     if nodes:
         uniqueNodes = uniqueNodes + nodes
