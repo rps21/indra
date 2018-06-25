@@ -185,17 +185,16 @@ for st in stmts:
         large_model_stmts.append(st)
         app=0
 
-#In the middle, once I fix activating/inhibitory phosphorylations 
-#Should have ability to pick one, not assume active. 
-#Then for decreaseamount can pick can pick TF, then inhibitory phos 
-
-#effectType = {'JUN':'phosphorylation','STAT1':'phosphorylation','PKM':'phosphorylation','RPS6':'dephosphorylation','AURKA':'phosphorylation','HIF1A':'increased','MYC':'increased','PDGFRA':'increased'}
-
-#nodes = ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC','PDGFRA','KDR','PDGF','FLT3LG','PDGFA','SORAFENIB','GenericPhosphatase']
-#nodes = ['STAT1','RPS6','HIF1A','PDGFRA','PDGF','FLT3LG','FLT3','PDGFA','SORAFENIB','GenericPhosphatase']
-nodes = ['PDGFA','PDGFRA','AKT1','RPS6KB1','RPS6']
 
 
+#effectType = {'JUN':'phosphorylation','STAT1':'phosphorylation','PKM':'phosphorylation','RPS6':'dephosphorylation','AURKA':'phosphorylation','HIF1A':'increased','MYC':'increased'}#,'PDGFRA':'increased'}
+
+nodes = ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC','PDGFRA','KDR','PDGF','FLT3LG','PDGFA','SORAFENIB','GenericPhosphatase','AKT1','RPS6KB1','RPS6','SRC','JAK2']
+#nodes = ['PDGFA','PDGFRA','AKT1','RPS6KB1','RPS6']
+
+large_model_stmts = ac.filter_gene_list(large_model_stmts,nodes,'all')
+
+effectType = {'PKM':['phosphorylation','SORAFENIB phosphorylates PKM'],'RPS6':['dephosphorylation','SORAFENIB phosphorylates RPS6'],'AURKA':['phosphorylation','SORAFENIB phosphorylates AURKA'],'HIF1A':['increaseamount','SORAFENIB transcribes HIF1A'],'MYC':['increaseamount','SORAFENIB transcribes MYC'],'JUN':['phosphorylation','SORAFENIB phosphorylates JUN']}#,'STAT1':['phosphorylation','SORAFENIB phosphorylates STAT1']}#,'PDGFRA':'increased'}
 
 #NEW ISSUE:
 #Not all phos are equal. 
@@ -276,8 +275,8 @@ for key in effectType:
 
             #Could get around slowness of adding lots of nodes by adding one node at a time, then testing.  But then could potentially run the test many, many times 
             nodesToTest = nodes+newNodes
-            if len(potentialNodes) >= 50:
-                potentialNodes = potentialNodes[:51]
+            if len(potentialNodes) >= 20:
+                potentialNodes = potentialNodes[:21]
 
             #Can I filter by nodes in model first, and only test with those?
             #honestly, may not be entirely necessary, but helps automation and enforcing smallness of model by identifying first possible solution
@@ -354,29 +353,6 @@ for key in effectType:
 
 
 
-#At this point I think contextStmts are complete - slightly wrong, it appears a small set of stmts aren't running through this, have wrong context 
-
-#stmts = ac.filter_gene_list(large_model_stmts,nodesToTest,'all') + ac.filter_gene_list(stmtsDB,node,'one') + newStmts + finalModelStmts   
-
-#genes= ['SORAFENIB', 'PDGFRA', 'PDGFA', 'SRC', 'RPS6','RPS6KB1']
-#stmts2 = ac.filter_gene_list(stmts,genes,'all')
-#sifFile,contextStmts = buildDirectedSif(stmts2,save=True,fn='./directedSifFile.sif') 
-
-#rps6stmts = ac.filter_gene_list(stmts2,['RPS6','RPS6KB1'],'all')
-#                                                                          
-#sifFile,contextStmts = buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif') 
-
-
-#newContextStmts = []
-#for st in contextStmts:
-#    if isinstance(st,Modification):
-#       if not st.position:
-#            newContextStmts.append(st)
-#    elif isinstance(st,ActiveForm):
-#        if not st.agent.mods[0].position:
-#            newContextStmts.append(st)
-#    else:
-#            newContextStmts.append(st)
 
 #key='RPS6'
 #paths1 = findPaths(sifFile,'SORAFENIB',key,8)  #checking against original node in question instead
@@ -403,15 +379,9 @@ for key in effectType:
 
 #ac.dump_statements(reducedFinalStmts,'reducedPpotentialFinalGroupMeetingStmts.pkl')
 
-#bngl_model = pysb.export.export(model,'bngl')
-#with open('final_bngl_model.bngl','w') as f:
+#bngl_model = pysb.export.export(PySB_Model,'bngl')
+#with open('final_bngl_model_NEW_NEW_NEW.bngl','w') as f:
 #    f.write(bngl_model)
-
-
-
-
-
-
 
 
 
