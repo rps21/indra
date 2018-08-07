@@ -37,47 +37,59 @@ def get_agent_name(agent):
     name = agent.name
     return name
 
-#Functionalize searching for agent by name
-def find_agent(stmts, input_list):
+#Functionalize searching for agent in statements by name
+def find_agent(stmts, name_list):
     output_agents = []
     output_names = []
+    stmts = ac.strip_agent_context(stmts)
     for st in stmts:
-        for ag in st.agent_list():
-            if ag.name in input_list: #these are ligands 
-                if not any(list(map(lambda obj: obj.matches(ag), output_agents))):
-                    output_agents.append(ag)#receptor agent 
-                    output_names.append(ag.name)
-    return output_agents, output_names
+        if None not in st.agent_list():
+            ag_list = [ag for ag in st.agent_list() if ag.name in name_list and not any(list(map(lambda obj: obj.matches(ag), output_agents)))]
+            output_agents = output_agents + ag_list #receptor agent 
+    return output_agents
 
 
-
+#HERE################
+#Find pairs not two separate lists
 def find_rec_lig(stmts):
     #Requires dict of receptor-ligand pairs, should store this somewhere better
-    with open('/home/bobby/Dropbox/Sorger_Lab/BigMech/reporting_and_eval/phase3_eval_pt2/dynamical_model/model_building/lig_rec_dict.pkl','rb') as f:
+    with open('/home/bobby/Dropbox/Sorger_Lab/indra/indra/tools/small_model_tools/lig_rec_dict.pkl','rb') as f:
         receptor_dict = pickle.load(f)
 
-    new_af_stmts = []
-    lig_list, lig_names = find_agent(stmts,list(receptor_dict.keys()))
-    lig_stmts = ac.filter_gene_list(stmts,lig_names,'one')
-
-    rec_list = []
-    rec_names = []
+    ligRecPairList = []
     for sublist in list(receptor_dict.values()):
-        rec_list_init, rec_names_init = find_agent(lig_stmts,sublist)
-        rec_list = rec_list + rec_list_init #change this to avoid repeats
-        rec_names = rec_names + rec_names_init
-    lig_list = list(set(lig_list))
-    rec_list = list(set(rec_list))
-    return lig_names, rec_names, lig_list, rec_list
+        rec_list_init = find_agent(stmts,sublist)
+        if rec_list_init:
+            print(rec_list_init)
+            for rec in rec_list_init:
+                #this pulls first ligand from dict. Should probably allow searching a corpus for ligands already present in st list 
+                for lig, recs in receptor_dict.items():    
+                    if rec.name in recs:
+                        ligRecPair = (lig,rec.name)  #strings, not agents
+                        ligRecPairList.append(ligRecPair)
+                        break
+
+    return ligRecPairList
+
+#    lig_list, lig_names = find_agent(stmts,list(receptor_dict.keys()))
+
+#    return lig_names, rec_names, lig_list, rec_list
 
 
 
-def add_receptor_ligand_activeform_improved(stmts):
+
+
+
+
+def add_receptor_ligand_activeform(stmts):
     lig_ag = []
     new_af_stmts = []
     lig_names, rec_names, lig_list, rec_list = find_rec_lig(stmts)
     rec_lig_stmts = ac.filter_gene_list(stmts,rec_names+lig_names,'all')
     
+#    for st in rec_lig_stmts:
+#        if isinstance(st, Modification):   
+
     for st in rec_lig_stmts:
         for ag in st.agent_list():
             #This step could probably be combined with find_rec_lig(). Should find a way to find pairs of lig-rec instead of individual lists
@@ -94,7 +106,24 @@ def add_receptor_ligand_activeform_improved(stmts):
     output_stmts = stmts + new_af_stmts
     return output_stmts, lig_list, rec_list
 
+#def fixRecPhosContext(rec_names, stmts):
+#    phosStmts = ac.filter_by_type(stmts,Phosphorylation)
+#    newRecPhosStmts = []
+#    for rec in rec_names:
+#        recPhosStmts = ac.filter_gene_list(phosStmts,[rec],'one')
+#        recPhosStmts_self = []
+#        for st in recPhosStmts:
+#            if st.enz.name == rec and st.sub.name == rec:
+#                recPhosStmts_self.append(st)
 
+#        for st in recPhosStmts_self:
+#            newSt = deepcopy(st)
+#            newSt.enz.mods = []
+#            lig_ag = getLigAgent(rec,stmts)
+#            if lig_ag:
+#                newSt.enz.bound_conditions = [BoundCondition(lig_ag)]
+#                newRecPhosStmts.append(newSt)
+#    return newRecPhosStmts
 
 
 
@@ -166,16 +195,16 @@ def add_complex_active_form(stmt, upstream_list):
     new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
     return new_af_stmts 
 
-def add_transcription_active_form(stmt, upstream_list):
-    new_af_stmts = []
-    ag = stmt.subj
-    if any([ag.entity_matches(previous_level) for previous_level in upstream_list]):   
-        pass            
-    else:
-        af_agent = deepcopy(ag)
-        af_stmt = ActiveForm(af_agent,activity='transcription',is_active=True)  #Kinase here is too specific. May be able to take any string
-        new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
-    return new_af_stmts
+#def add_transcription_active_form(stmt, upstream_list):
+#    new_af_stmts = []
+#    ag = stmt.subj
+#    if any([ag.entity_matches(previous_level) for previous_level in upstream_list]):   
+#        pass            
+#    else:
+#        af_agent = deepcopy(ag)
+#        af_stmt = ActiveForm(af_agent,activity='transcription',is_active=True)  #Kinase here is too specific. May be able to take any string
+#        new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
+#    return new_af_stmts
 #Not sure this is working correctly. Requires knowledge tf is modified, rather than finding modification of tf. 
 
 #Translocation
@@ -230,7 +259,7 @@ def add_all_af(stmts):
     downstream_list_total = []
 
     #First, handle receptors
-    updated_stmts, lig_list, rec_list = add_receptor_ligand_activeform_improved(stmts)
+    updated_stmts, lig_list, rec_list = add_receptor_ligand_activeform(stmts)
 
     upstream_list = lig_list
     downstream_list = rec_list
@@ -271,8 +300,6 @@ def run_mechlinker_step_reduced(stmts,downstream_list,upstream_list):
 
     print(len(downstream_list))
     for i in range(len(downstream_list)):
-#        ml = MechLinker(stmts)
-        print(i)
         ml.require_active_forms_complex(downstream_list[i], upstream_list[i]) #reexamine why input list of agents is needed.
         updated_stmts = ml.statements
         updated_stmts = Preassembler.combine_duplicate_stmts(updated_stmts)      
@@ -280,10 +307,6 @@ def run_mechlinker_step_reduced(stmts,downstream_list,upstream_list):
         ml.gather_explicit_activities() #Why was this commented out?
         ml.gather_modifications()
         ml.require_active_forms() #THIS IS KEY
-#        print(stmts)
-#        print(downstream_list)
-#        print(upstream_list)
-#        print(updated_stmts)
 
     output_stmts = ml.statements
     return output_stmts
