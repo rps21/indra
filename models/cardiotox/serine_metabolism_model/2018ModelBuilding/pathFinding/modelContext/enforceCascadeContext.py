@@ -58,17 +58,25 @@ def find_rec_lig(stmts):
 
     ligRecPairList = []
     for sublist in list(receptor_dict.values()):
-        rec_list_init = find_agent(stmts,sublist)
+        rec_list_init = find_agent(stmts,sublist)   #have a list of receptors to loop through. For each receptor, want either all pairs in stmts or first addition from dict if none 
         if rec_list_init:
-            print(rec_list_init)
             for rec in rec_list_init:
                 #this pulls first ligand from dict. Should probably allow searching a corpus for ligands already present in st list 
+                #break this down rec by rec (may only be one) and combine at end?
                 for lig, recs in receptor_dict.items():    
                     if rec.name in recs:
-                        ligRecPair = (lig,rec.name)  #strings, not agents
-                        ligRecPairList.append(ligRecPair)
-                        break
+                        #Testing
+                        lig_ag = find_agent(stmts,[lig])
+                        if lig_ag:
+                            ligRecPair = (lig_ag[0].name,rec.name)  #strings, not agents
+                            ligRecPairList.append(ligRecPair)
+                            break
+                        else:
+                            backupLigRecPair = (lig,rec.name)  #strings, not agents
 
+                if not ligRecPairList:
+                    ligRecPairList.append(backupLigRecPair)
+    ligRecPairList = list(set(ligRecPairList))
     return ligRecPairList
 
 #    lig_list, lig_names = find_agent(stmts,list(receptor_dict.keys()))
