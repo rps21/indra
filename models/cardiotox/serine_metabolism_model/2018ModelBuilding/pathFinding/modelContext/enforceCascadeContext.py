@@ -40,15 +40,15 @@ def get_agent_name(agent):
     return name
 
 #Functionalize searching for agent in statements by name
-def find_agent(stmts, name_list):
-    output_agents = []
-    output_names = []
+def find_agent(stmts, inputName):
     stmts = ac.strip_agent_context(stmts)
     for st in stmts:
         if None not in st.agent_list():
-            ag_list = [ag for ag in st.agent_list() if ag.name in name_list and not any(list(map(lambda obj: obj.matches(ag), output_agents)))]
-            output_agents = output_agents + ag_list #receptor agent 
-    return output_agents
+            for ag in st.agent_list():
+                if ag.name == inputName: 
+                    output_agent = ag
+                    break
+    return output_agent
 
 
 def findAllAgentNames(stmts):
@@ -60,52 +60,120 @@ def findAllAgentNames(stmts):
 
 #    return lig_names, rec_names, lig_list, rec_list
 
-
-def find_rec_lig_new(stmts):
-    allRecNames = list(set(list(itertools.chain.from_iterable(list(receptor_dict.values())))))
+def find_rec_lig(stmts):
+    with open('/home/bobby/Dropbox/Sorger_Lab/indra/indra/tools/small_model_tools/lig_rec_dict.pkl','rb') as f:
+        receptor_dict = pickle.load(f)
+    allRecNames = list(itertools.chain.from_iterable(list(receptor_dict.values())))
     allAgentNames = findAllAgentNames(stmts)
     recInCorpus = [name for name in allAgentNames if name in allRecNames]
     ligRecPairList = []
+    ligRecPairAgentList = []
     for receptor in recInCorpus:
         for ligRef, recRef in receptor_dict.items():    
             if receptor in recRef:
                 if ligRef in allAgentNames:
+                    #Handle names
                     ligRecPair = (ligRef,receptor)  #strings, not agents
                     ligRecPairList.append(ligRecPair)
+                
+                    #Handle agents 
+                    try:
+                        ligAg = find_agent(stmts,ligRef)
+                    except UnboundLocalError:
+                        print('No agent found with name %s, creating agent' % ligRef)
+                        ligAg = Agent(ligRef)
+                    try:
+                        recAg = find_agent(stmts,receptor)
+                    except UnboundLocalError:
+                        print('No agent found with name %s' % receptor)
+                        recAg = Agent(receptor) #This will be missing db_refs
+                    ligRecPairAgent = (ligAg,recAg)  
+                    ligRecPairAgentList.append(ligRecPairAgent)
+
                 else:
                     backupLigRecPair = (ligRef,receptor) #strings, not agents
 
         if not ligRecPairList:
             ligRecPairList.append(backupLigRecPair)
     ligRecPairList = list(set(ligRecPairList))
-    return ligRecPairList
+    return ligRecPairList, ligRecPairAgentList, recInCorpus
 
 
+
+
+
+#Main idea here: typically, ligand binding is the active form for a receptor
+#Exception: if there is phosphorylation of receptor without outside kinase i.e. cis or trans phos following ligand binding 
+    #In this case phosphorylation is the active form, but the phosphorylation reaction should require ligand binding. 
 
 def add_receptor_ligand_activeform(stmts):
-    lig_ag = []
     new_af_stmts = []
-    lig_names, rec_names, lig_list, rec_list = find_rec_lig(stmts)
-    rec_lig_stmts = ac.filter_gene_list(stmts,rec_names+lig_names,'all')
+    ligRecPairs, ligRecPairAgentList, recInCorpus = find_rec_lig(stmts)
+    rec_lig_stmts = ac.filter_gene_list(stmts,list(itertools.chain.from_iterable(ligRecPairs)),'all')
     
-#    for st in rec_lig_stmts:
-#        if isinstance(st, Modification):   
-
+    #need a way to split receptors into phos or not phos groups 
+    phosStmts = []
     for st in rec_lig_stmts:
-        for ag in st.agent_list():
-            #This step could probably be combined with find_rec_lig(). Should find a way to find pairs of lig-rec instead of individual lists
-            if ag.name in lig_names:
-                lig_ag = deepcopy(ag) 
-            if ag.name in rec_names:
-                rec_ag = deepcopy(ag) 
-        if lig_ag:
-            rec_ag.bound_conditions = [BoundCondition(lig_ag)]
-            af_stmt = ActiveForm(rec_ag,activity='kinase',is_active=True)
+        if isinstance(st,Phosphorylation):
+            phosStmts.append(st)
+    allNames = findAllAgentNames(phosStmts)
+    phos_rec = []
+    non_phos_rec = []
+    for rec in recInCorpus:
+        if rec in allNames:
+            phos_rec.append(rec)
+        else:
+            non_phos_rec.append(rec)
+
+#    phos_stmts = ac.filter_gene_list(rec_lig_stmts,phos_rec,'one')
+#    non_phos_stmts = ac.filter_gene_list(rec_lig_stmts,non_phos_rec,'one')
+
+    #now use rec-lig pairs to build af stmts directly, instead of looping through. handle phos and non phos rec diff
+    for pair in ligRecPairAgentList:
+        if any([el for el in pair if el.name in phos_rec]):
+
+            ligAg = pair[0]     #Fix so that we have agents in pairs 
+            recAg = pair[1] 
+
+            kinAg = deepcopy(recAg)
+            kinAg.bound_conditions = [BoundCondition(ligAg)]
+            newPhosStmt = Phosphorylation(kinAg,recAg)#Is this dangerous/wrong? Should I be checking and modifying phos stmts directly? Minimaly need to remove old ones
+            new_af_stmts.append(newPhosStmt)
+
+            afAg = deepcopy(recAg)
+            afAg.mods.append(ModCondition(mod_type='phosphorylation'))
+            af_stmt = ActiveForm(afAg,activity='activity',is_active=True)
             new_af_stmts.append(af_stmt)
-            lig_ag = None
+
+        else: #no phos 
+            ligAg = pair[0]     #Fix so that we have agents in pairs 
+            recAg = pair[1] 
+            recAg.bound_conditions = [BoundCondition(ligAg)]
+            af_stmt = ActiveForm(recAg,activity='activity',is_active=True)
+            new_af_stmts.append(af_stmt)
+
+
     new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts)
     output_stmts = stmts + new_af_stmts
-    return output_stmts, lig_list, rec_list
+    return output_stmts #, lig_list, rec_list
+
+###
+##Original
+#    for st in rec_lig_stmts:
+#        for ag in st.agent_list():
+#            #This step could probably be combined with find_rec_lig(). Should find a way to find pairs of lig-rec instead of individual lists
+#            if ag.name in lig_names:
+#                lig_ag = deepcopy(ag) 
+#            if ag.name in rec_names:
+#                rec_ag = deepcopy(ag) 
+#        if lig_ag:
+#            rec_ag.bound_conditions = [BoundCondition(lig_ag)]
+#            af_stmt = ActiveForm(rec_ag,activity='kinase',is_active=True)
+#            new_af_stmts.append(af_stmt)
+#            lig_ag = None
+#    new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts)
+#    output_stmts = stmts + new_af_stmts
+#    return output_stmts, lig_list, rec_list
 
 #def fixRecPhosContext(rec_names, stmts):
 #    phosStmts = ac.filter_by_type(stmts,Phosphorylation)
