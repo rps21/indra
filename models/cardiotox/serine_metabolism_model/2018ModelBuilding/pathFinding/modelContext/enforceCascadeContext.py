@@ -7,6 +7,8 @@ from indra.tools import assemble_corpus as ac
 from indra.statements import *
 from indra.mechlinker import MechLinker
 from indra.preassembler import Preassembler
+import logging
+logging.getLogger("imported_module").setLevel(logging.WARNING)
 
 
 
@@ -49,43 +51,34 @@ def find_agent(stmts, name_list):
     return output_agents
 
 
-#HERE################
-#Find pairs not two separate lists
-def find_rec_lig(stmts):
-    #Requires dict of receptor-ligand pairs, should store this somewhere better
-    with open('/home/bobby/Dropbox/Sorger_Lab/indra/indra/tools/small_model_tools/lig_rec_dict.pkl','rb') as f:
-        receptor_dict = pickle.load(f)
-
-    ligRecPairList = []
-    for sublist in list(receptor_dict.values()):
-        rec_list_init = find_agent(stmts,sublist)   #have a list of receptors to loop through. For each receptor, want either all pairs in stmts or first addition from dict if none 
-        if rec_list_init:
-            for rec in rec_list_init:
-                #this pulls first ligand from dict. Should probably allow searching a corpus for ligands already present in st list 
-                #break this down rec by rec (may only be one) and combine at end?
-                for lig, recs in receptor_dict.items():    
-                    if rec.name in recs:
-                        #Testing
-                        lig_ag = find_agent(stmts,[lig])
-                        if lig_ag:
-                            ligRecPair = (lig_ag[0].name,rec.name)  #strings, not agents
-                            ligRecPairList.append(ligRecPair)
-                            break
-                        else:
-                            backupLigRecPair = (lig,rec.name)  #strings, not agents
-
-                if not ligRecPairList:
-                    ligRecPairList.append(backupLigRecPair)
-    ligRecPairList = list(set(ligRecPairList))
-    return ligRecPairList
-
-#    lig_list, lig_names = find_agent(stmts,list(receptor_dict.keys()))
+def findAllAgentNames(stmts):
+    names = []
+    for st in stmts:
+        names = names + list(map(lambda obj: obj.name, st.agent_list()))
+        names = list(set(names))
+    return names 
 
 #    return lig_names, rec_names, lig_list, rec_list
 
 
+def find_rec_lig_new(stmts):
+    allRecNames = list(set(list(itertools.chain.from_iterable(list(receptor_dict.values())))))
+    allAgentNames = findAllAgentNames(stmts)
+    recInCorpus = [name for name in allAgentNames if name in allRecNames]
+    ligRecPairList = []
+    for receptor in recInCorpus:
+        for ligRef, recRef in receptor_dict.items():    
+            if receptor in recRef:
+                if ligRef in allAgentNames:
+                    ligRecPair = (ligRef,receptor)  #strings, not agents
+                    ligRecPairList.append(ligRecPair)
+                else:
+                    backupLigRecPair = (ligRef,receptor) #strings, not agents
 
-
+        if not ligRecPairList:
+            ligRecPairList.append(backupLigRecPair)
+    ligRecPairList = list(set(ligRecPairList))
+    return ligRecPairList
 
 
 
