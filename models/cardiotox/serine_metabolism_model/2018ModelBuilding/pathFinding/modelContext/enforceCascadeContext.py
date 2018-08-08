@@ -193,13 +193,12 @@ def add_active_forms(stmts,newPairsNames):
     for pair in newPairsNames:
         relevantStmts = ac.filter_gene_list(stmts,list(pair),'all')
         for st in relevantStmts:    
-            if len(st.agent_list()) > 1 and st.agent_list()[0].name != st.agent_list()[1].name:
-                if isinstance(st, Modification):    
-                    newStmt = add_modification_active_form(st)
-                    new_af_stmts.append(newStmt)
-                elif isinstance(st, Complex):
-                    newStmt = add_complex_active_form(st,  pair[1])
-                    new_af_stmts.append(newStmt)
+            if isinstance(st, Modification):    
+                newStmt = add_modification_active_form(st)
+                new_af_stmts.append(newStmt)
+            elif isinstance(st, Complex):
+                newStmt = add_complex_active_form(st,  pair[1])
+                new_af_stmts.append(newStmt)
 #        elif isinstance(st, IncreaseAmount):
 #            new_af_stmts_init = add_transcription_active_form(st, upstream_list)
 #            new_af_stmts = new_af_stmts + new_af_stmts_init
@@ -221,11 +220,15 @@ def add_modification_active_form(stmt):
 
 
 def add_complex_active_form(stmt, upstreamElement):
-    for ag in stmt.agent_list(): 
-        if ag.name == upstreamElement:
-            afAg = deepcopy(ag)
-        else:
-            bindingAg = deepcopy(ag)
+    if all(list(map(lambda obj: obj.name==stmt.agent_list()[0].name, stmt.agent_list()))): #homodimers 
+        afAg = deepcopy(stmt.agent_list()[0])
+        bindingAg = deepcopy(stmt.agent_list()[0])
+    else:
+        for ag in stmt.agent_list(): 
+            if ag.name == upstreamElement:
+                afAg = deepcopy(ag)
+            else:
+                bindingAg = deepcopy(ag)
     af_boundconditions = [BoundCondition(bindingAg)]
     afAg.bound_conditions = af_boundconditions
     af_stmt = ActiveForm(afAg,activity='activity',is_active=True)
