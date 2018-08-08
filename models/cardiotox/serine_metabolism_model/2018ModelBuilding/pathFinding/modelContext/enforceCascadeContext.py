@@ -8,7 +8,7 @@ from indra.statements import *
 from indra.mechlinker import MechLinker
 from indra.preassembler import Preassembler
 import logging
-logging.getLogger("imported_module").setLevel(logging.WARNING)
+logging.getLogger("assemble_corpus").setLevel(logging.WARNING)
 
 
 
@@ -163,84 +163,122 @@ def add_receptor_ligand_activeform(stmts):
 #then build af stmts for these 
 #should be able to generalize this beyond rec-lig and cut down a function later
 
-def find_next_downstream_list(next_level_stmts,old_upstream_list,old_downstream_list):
-    new_downstream_list = []
-    new_upstream_list = []
-    for st in next_level_stmts:
-        for ag1 in st.agent_list():
-            for ag2 in old_downstream_list:
-                if not ag1.entity_matches(ag2):
-                    new_downstream_list.append(ag1)
-                else:
-                    new_upstream_list.append(ag1)
-    new_downstream_list = list(set(new_downstream_list))
-    new_upstream_list = list(set(new_upstream_list))
-    return new_downstream_list, new_upstream_list
+#Work with tuples
+#tuple[0] is upstream 
+#tuple[1] is downstream 
+#find statements with tuple[1], not tuple[0], not *only* tuple[1]
+#new tuple 
+#tuple[1] becomes tuple[0]
+#new tuple[1] comes from found statements 
 
-def find_next_cascade_step(stmts,upstream_list,downstream_list): 
-    new_downstream_list = []
-    downstream_names = []
-    upstream_names = []
-    for rec in downstream_list:
-        downstream_names.append(rec.name)
-    for lig in upstream_list:
-        upstream_names.append(lig.name)
-    downstream_names = list(set(downstream_names))
-    upstream_names = list(set(upstream_names))
-    downstream_stmts = ac.filter_gene_list(stmts,downstream_names,'one')
-    upstream_stmts = ac.filter_gene_list(stmts,upstream_names,'one')
-    next_level_stmts = [x for x in downstream_stmts if x not in upstream_stmts] #identifies stmts involing elements in the downstream list but not upstream, i.e. receptors binding adaptors but not ligands
-    new_downstream_list, new_upstream_list = find_next_downstream_list(next_level_stmts,upstream_list,downstream_list)
-    return next_level_stmts, new_downstream_list, new_upstream_list
+def findNextPPISet(stmts,oldPairsNames):
+    newPairsNames = []
+    for pair in oldPairsNames:
 
+        relevantStmts = ac.filter_gene_list(stmts,[pair[1]],'one')
+        for st in relevantStmts:
+            if pair[0] not in list(map(lambda obj: obj.name, st.agent_list())):
+                for ag in st.agent_list():
+                    if ag.name != pair[1]:  #this will effectively skip homodimers, which should already be taken care of
+                        newPair = (pair[1],ag.name)
+                        newPairsNames.append(newPair)
+    newPairsNames = list(set(newPairsNames))
+    return newPairsNames
+#names or agents best?
+#Is there a better way for searching and indexing agents than the double loop?
+#Maybe just build a separate function that will be cleaner, but same effeciency
 
-
-def add_modification_active_form(stmt, upstream_list):
+def add_active_forms(stmts,newPairsNames):
     new_af_stmts = []
-    for ag in stmt.agent_list(): 
-        if any([ag.entity_matches(previous_level) for previous_level in upstream_list]):   
-            pass            
-        else:
-            af_agent = deepcopy(ag)
-            af_mods = [stmt._get_mod_condition()] #need to enclose in list 
-            af_agent.mods = af_mods
-            af_stmt = ActiveForm(af_agent,activity='kinase',is_active=True)  #Kinase here is too specific. May be able to take any string
-            new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
-    return new_af_stmts #, new_downstream_list
+    for pair in newPairsNames:
+        relevantStmts = ac.filter_gene_list(stmts,list(pair),'all')
+        for st in relevantStmts:    
+            if len(st.agent_list()) > 1 and st.agent_list()[0].name != st.agent_list()[1].name:
+                if isinstance(st, Modification):    
+                    newStmt = add_modification_active_form(st)
+                    new_af_stmts.append(newStmt)
+                elif isinstance(st, Complex):
+                    newStmt = add_complex_active_form(st,  pair[1])
+                    new_af_stmts.append(newStmt)
+#        elif isinstance(st, IncreaseAmount):
+#            new_af_stmts_init = add_transcription_active_form(st, upstream_list)
+#            new_af_stmts = new_af_stmts + new_af_stmts_init
+     
+    new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts) 
+    return new_af_stmts
 
-def add_complex_active_form(stmt, upstream_list):
-    af_agent = None
+
+def add_modification_active_form(stmt):
+    #In this case we know enz is upstream and sub downstream. Shouldn't have to do any matching 
     new_af_stmts = []
-    for ag in stmt.agent_list(): 
-        if all([ag.entity_matches(previous_level) for previous_level in upstream_list]): #check for homodimers
-            previous_agent = deepcopy(ag)
-            af_agent = deepcopy(ag)
-        elif any([ag.entity_matches(previous_level) for previous_level in upstream_list]):  
-            previous_agent = deepcopy(ag)
-        else:
-            af_agent = deepcopy(ag) 
-    af_boundconditions = [BoundCondition(previous_agent)]
-    af_agent.bound_conditions = af_boundconditions
-    af_stmt = ActiveForm(af_agent,activity='kinase',is_active=True)
-    new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
-    return new_af_stmts 
+    af_agent = deepcopy(stmt.sub)
+    af_mods = [stmt._get_mod_condition()] #need to enclose in list 
+    af_agent.mods = af_mods
+    af_stmt = ActiveForm(af_agent,activity='activity',is_active=True)  #Kinase here is too specific. May be able to take any string
+    #new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Compl
 
-#def add_transcription_active_form(stmt, upstream_list):
+    return af_stmt 
+
+
+def add_complex_active_form(stmt, upstreamElement):
+    for ag in stmt.agent_list(): 
+        if ag.name == upstreamElement:
+            afAg = deepcopy(ag)
+        else:
+            bindingAg = deepcopy(ag)
+    af_boundconditions = [BoundCondition(bindingAg)]
+    afAg.bound_conditions = af_boundconditions
+    af_stmt = ActiveForm(afAg,activity='activity',is_active=True)
+#    new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
+    return af_stmt 
+
+
+
+#def find_next_downstream_list(next_level_stmts,old_upstream_list,old_downstream_list):
+#    new_downstream_list = []
+#    new_upstream_list = []
+#    for st in next_level_stmts:
+#        for ag1 in st.agent_list():
+#            for ag2 in old_downstream_list:
+#                if not ag1.entity_matches(ag2):
+#                    new_downstream_list.append(ag1)
+#                else:
+#                    new_upstream_list.append(ag1)
+#    new_downstream_list = list(set(new_downstream_list))
+#    new_upstream_list = list(set(new_upstream_list))
+#    return new_downstream_list, new_upstream_list
+
+#def find_next_cascade_step(stmts,upstream_list,downstream_list): 
+#    new_downstream_list = []
+#    downstream_names = []
+#    upstream_names = []
+#    for rec in downstream_list:
+#        downstream_names.append(rec.name)
+#    for lig in upstream_list:
+#        upstream_names.append(lig.name)
+#    downstream_names = list(set(downstream_names))
+#    upstream_names = list(set(upstream_names))
+#    downstream_stmts = ac.filter_gene_list(stmts,downstream_names,'one')
+#    upstream_stmts = ac.filter_gene_list(stmts,upstream_names,'one')
+#    next_level_stmts = [x for x in downstream_stmts if x not in upstream_stmts] #identifies stmts involing elements in the downstream list but not upstream, i.e. receptors binding adaptors but not ligands
+#    new_downstream_list, new_upstream_list = find_next_downstream_list(next_level_stmts,upstream_list,downstream_list)
+#    return next_level_stmts, new_downstream_list, new_upstream_list
+
+
+
+#def add_modification_active_form(stmt, upstream_list):
 #    new_af_stmts = []
-#    ag = stmt.subj
-#    if any([ag.entity_matches(previous_level) for previous_level in upstream_list]):   
-#        pass            
-#    else:
-#        af_agent = deepcopy(ag)
-#        af_stmt = ActiveForm(af_agent,activity='transcription',is_active=True)  #Kinase here is too specific. May be able to take any string
-#        new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
-#    return new_af_stmts
-#Not sure this is working correctly. Requires knowledge tf is modified, rather than finding modification of tf. 
+#    for ag in stmt.agent_list(): 
+#        if any([ag.entity_matches(previous_level) for previous_level in upstream_list]):   
+#            pass            
+#        else:
+#            af_agent = deepcopy(ag)
+#            af_mods = [stmt._get_mod_condition()] #need to enclose in list 
+#            af_agent.mods = af_mods
+#            af_stmt = ActiveForm(af_agent,activity='kinase',is_active=True)  #Kinase here is too specific. May be able to take any string
+#            new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
+#    return new_af_stmts #, new_downstream_list
 
-#Translocation
-#filter ones without a from or to location 
-#In [9]: trans1.from_location
-#Then look for upstream partner
 #def add_complex_active_form(stmt, upstream_list):
 #    af_agent = None
 #    new_af_stmts = []
@@ -261,24 +299,25 @@ def add_complex_active_form(stmt, upstream_list):
 
 
 
-def add_active_forms(next_level_stmts,upstream_list):
-    #split to handle modification statements and complex statements separately, notably missing transcription
-    #break these into separate functions for clarity
-    new_af_stmts = []
-    for st in next_level_stmts:
-        #is this method going to lead to a lot of duplicates?
-        if isinstance(st, Modification):    
-            new_af_stmts_init = add_modification_active_form(st, upstream_list)
-            new_af_stmts = new_af_stmts + new_af_stmts_init
-        elif isinstance(st, Complex):
-            new_af_stmts_init = add_complex_active_form(st, upstream_list)
-            new_af_stmts = new_af_stmts + new_af_stmts_init
-        elif isinstance(st, IncreaseAmount):
-            new_af_stmts_init = add_transcription_active_form(st, upstream_list)
-            new_af_stmts = new_af_stmts + new_af_stmts_init
-     
-    new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts) 
-    return new_af_stmts
+
+#def add_active_forms(next_level_stmts,upstream_list):
+#    #split to handle modification statements and complex statements separately, notably missing transcription
+#    #break these into separate functions for clarity
+#    new_af_stmts = []
+#    for st in next_level_stmts:
+#        #is this method going to lead to a lot of duplicates?
+#        if isinstance(st, Modification):    
+#            new_af_stmts_init = add_modification_active_form(st, upstream_list)
+#            new_af_stmts = new_af_stmts + new_af_stmts_init
+#        elif isinstance(st, Complex):
+#            new_af_stmts_init = add_complex_active_form(st, upstream_list)
+#            new_af_stmts = new_af_stmts + new_af_stmts_init
+#        elif isinstance(st, IncreaseAmount):
+#            new_af_stmts_init = add_transcription_active_form(st, upstream_list)
+#            new_af_stmts = new_af_stmts + new_af_stmts_init
+#     
+#    new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts) 
+#    return new_af_stmts
 
 ####################################
 
