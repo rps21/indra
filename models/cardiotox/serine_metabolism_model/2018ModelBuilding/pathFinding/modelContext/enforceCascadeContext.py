@@ -153,7 +153,7 @@ def add_receptor_ligand_activeform(stmts):
 
     new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts)
     outputStmts = outputStmts + new_af_stmts
-    return outputStmts #, lig_list, rec_list
+    return outputStmts, ligRecPairs, recInCorpus
 
 
 
@@ -190,21 +190,24 @@ def findNextPPISet(stmts,oldPairsNames):
 
 def add_active_forms(stmts,newPairsNames):
     new_af_stmts = []
+    af_agents = []
     for pair in newPairsNames:
         relevantStmts = ac.filter_gene_list(stmts,list(pair),'all')
         for st in relevantStmts:    
             if isinstance(st, Modification):    
                 newStmt = add_modification_active_form(st)
                 new_af_stmts.append(newStmt)
+                af_agents.append(newStmt.agent.name)
             elif isinstance(st, Complex):
                 newStmt = add_complex_active_form(st,  pair[1])
                 new_af_stmts.append(newStmt)
+                af_agents.append(newStmt.agent.name)
 #        elif isinstance(st, IncreaseAmount):
 #            new_af_stmts_init = add_transcription_active_form(st, upstream_list)
 #            new_af_stmts = new_af_stmts + new_af_stmts_init
      
     new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts) 
-    return new_af_stmts
+    return new_af_stmts, af_agents
 
 
 def add_modification_active_form(stmt):
@@ -232,156 +235,44 @@ def add_complex_active_form(stmt, upstreamElement):
     af_boundconditions = [BoundCondition(bindingAg)]
     afAg.bound_conditions = af_boundconditions
     af_stmt = ActiveForm(afAg,activity='activity',is_active=True)
-#    new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
+
     return af_stmt 
 
 
 
-#def find_next_downstream_list(next_level_stmts,old_upstream_list,old_downstream_list):
-#    new_downstream_list = []
-#    new_upstream_list = []
-#    for st in next_level_stmts:
-#        for ag1 in st.agent_list():
-#            for ag2 in old_downstream_list:
-#                if not ag1.entity_matches(ag2):
-#                    new_downstream_list.append(ag1)
-#                else:
-#                    new_upstream_list.append(ag1)
-#    new_downstream_list = list(set(new_downstream_list))
-#    new_upstream_list = list(set(new_upstream_list))
-#    return new_downstream_list, new_upstream_list
-
-#def find_next_cascade_step(stmts,upstream_list,downstream_list): 
-#    new_downstream_list = []
-#    downstream_names = []
-#    upstream_names = []
-#    for rec in downstream_list:
-#        downstream_names.append(rec.name)
-#    for lig in upstream_list:
-#        upstream_names.append(lig.name)
-#    downstream_names = list(set(downstream_names))
-#    upstream_names = list(set(upstream_names))
-#    downstream_stmts = ac.filter_gene_list(stmts,downstream_names,'one')
-#    upstream_stmts = ac.filter_gene_list(stmts,upstream_names,'one')
-#    next_level_stmts = [x for x in downstream_stmts if x not in upstream_stmts] #identifies stmts involing elements in the downstream list but not upstream, i.e. receptors binding adaptors but not ligands
-#    new_downstream_list, new_upstream_list = find_next_downstream_list(next_level_stmts,upstream_list,downstream_list)
-#    return next_level_stmts, new_downstream_list, new_upstream_list
-
-
-
-#def add_modification_active_form(stmt, upstream_list):
-#    new_af_stmts = []
-#    for ag in stmt.agent_list(): 
-#        if any([ag.entity_matches(previous_level) for previous_level in upstream_list]):   
-#            pass            
-#        else:
-#            af_agent = deepcopy(ag)
-#            af_mods = [stmt._get_mod_condition()] #need to enclose in list 
-#            af_agent.mods = af_mods
-#            af_stmt = ActiveForm(af_agent,activity='kinase',is_active=True)  #Kinase here is too specific. May be able to take any string
-#            new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
-#    return new_af_stmts #, new_downstream_list
-
-#def add_complex_active_form(stmt, upstream_list):
-#    af_agent = None
-#    new_af_stmts = []
-#    for ag in stmt.agent_list(): 
-#        if all([ag.entity_matches(previous_level) for previous_level in upstream_list]): #check for homodimers
-#            previous_agent = deepcopy(ag)
-#            af_agent = deepcopy(ag)
-#        elif any([ag.entity_matches(previous_level) for previous_level in upstream_list]):  
-#            previous_agent = deepcopy(ag)
-#        else:
-#            af_agent = deepcopy(ag) 
-#    af_boundconditions = [BoundCondition(previous_agent)]
-#    af_agent.bound_conditions = af_boundconditions
-#    af_stmt = ActiveForm(af_agent,activity='kinase',is_active=True)
-#    new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Complex)
-#    return new_af_stmts 
-
-
-
-
-
-#def add_active_forms(next_level_stmts,upstream_list):
-#    #split to handle modification statements and complex statements separately, notably missing transcription
-#    #break these into separate functions for clarity
-#    new_af_stmts = []
-#    for st in next_level_stmts:
-#        #is this method going to lead to a lot of duplicates?
-#        if isinstance(st, Modification):    
-#            new_af_stmts_init = add_modification_active_form(st, upstream_list)
-#            new_af_stmts = new_af_stmts + new_af_stmts_init
-#        elif isinstance(st, Complex):
-#            new_af_stmts_init = add_complex_active_form(st, upstream_list)
-#            new_af_stmts = new_af_stmts + new_af_stmts_init
-#        elif isinstance(st, IncreaseAmount):
-#            new_af_stmts_init = add_transcription_active_form(st, upstream_list)
-#            new_af_stmts = new_af_stmts + new_af_stmts_init
-#     
-#    new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts) 
-#    return new_af_stmts
-
-####################################
-
 
 
 def add_all_af(stmts):
-    upstream_list_total = []
-    downstream_list_total = []
-
-    #First, handle receptors
-    updated_stmts, lig_list, rec_list = add_receptor_ligand_activeform(stmts)
-
-    upstream_list = lig_list
-    downstream_list = rec_list
-    
-    #CHECK FOR INFINITE LOOPS
+    outputStmts,ligRecPairs,recInCorpus = add_receptor_ligand_activeform(stmts)
     i=0
-    outputStmts = []
-    while downstream_list:
-        next_stmts, new_downstream_list, new_upstream_list = find_next_cascade_step(updated_stmts,upstream_list, downstream_list)
-        new_af_stmts = add_active_forms(next_stmts,new_upstream_list)
-        updated_stmts = updated_stmts + new_af_stmts
+    afAgents = recInCorpus
+    oldPairs = ligRecPairs
+    while oldPairs:
+        newPairs = findNextPPISet(outputStmts,oldPairs)
+        newPairs = [pair for pair in newPairs if pair[1] not in afAgents]
+        newAFStmts, newAFAgents = add_active_forms(outputStmts,newPairs)
+        outputStmts = outputStmts + newAFStmts
+        afAgents = afAgents + newAFAgents
+        oldPairs = newPairs
 
-        #fixing loop issue
-        newStmts = [st for st in updated_stmts if st not in outputStmts]
-        outputStmts = newStmts + outputStmts
-        updated_stmts = [st for st in updated_stmts if st not in next_stmts]
-        #end fix 
-
-        #Save lists 
-        upstream_list_total.append(upstream_list)
-        downstream_list_total.append(downstream_list)
-
-        #Reset for next iteration
-        downstream_list = new_downstream_list
-        upstream_list = new_upstream_list   
-
-    outputStmts = reduce_complex_activeforms(outputStmts) 
-    outputStmts = combine_multiple_phos_activeforms(outputStmts)
-
-    return outputStmts, downstream_list_total, upstream_list_total
+    return outputStmts
 
 
-def run_mechlinker_step_reduced(stmts,downstream_list,upstream_list):
+
+def run_mechlinker_step_reduced(stmts):
     ml = MechLinker(stmts)
     ml.gather_explicit_activities() #Why was this commented out?
     ml.gather_modifications()
     ml.require_active_forms() #THIS IS KEY
+    ml.require_active_forms_complex() #d.
 
-    print(len(downstream_list))
-    for i in range(len(downstream_list)):
-        ml.require_active_forms_complex(downstream_list[i], upstream_list[i]) #reexamine why input list of agents is needed.
-        updated_stmts = ml.statements
-        updated_stmts = Preassembler.combine_duplicate_stmts(updated_stmts)      
-        ml = MechLinker(updated_stmts)
-        ml.gather_explicit_activities() #Why was this commented out?
-        ml.gather_modifications()
-        ml.require_active_forms() #THIS IS KEY
-
-    output_stmts = ml.statements
+    updated_stmts = ml.statements
+    output_stmts = Preassembler.combine_duplicate_stmts(updated_stmts)   
     return output_stmts
+
+
+
+
 
 
 ###################

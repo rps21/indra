@@ -8,6 +8,7 @@ import itertools
 from copy import deepcopy
 from indra.statements import *
 from indra.preassembler.hierarchy_manager import hierarchies
+from indra.tools import assemble_corpus as ac
 
 logger = logging.getLogger('mechlinker')
 
@@ -216,62 +217,23 @@ class MechLinker(object):
         self.statements = new_stmts
         return new_stmts
 
-    def require_active_forms_complex(self,agent_list,upstream_list):
-        new_stmts = []
-        for stmt in self.statements:
-            binding_ag_index = []
-            if isinstance(stmt, Complex):
-                match=0
-                for ag in stmt.agent_list():
-                    if any(list(map(lambda obj: obj.entity_matches(ag), upstream_list))): 
-                        match = 0
-                        break
-                    for ag2 in agent_list:
-                        if ag.entity_matches(ag2):
-                                match = 1
-                                binding_ag = ag2
-                                print('ag to add context is %s' % binding_ag)
-#                                binding_ag_index = stmt.agent_list().index(ag)
-                                binding_ag_index.append(stmt.agent_list().index(ag))
-                if match == 0: 
-                    new_stmts.append(stmt)
-                    continue
-                ag_base = self._get_base(binding_ag) 
-                active_forms = ag_base.get_active_forms()
-                if not active_forms:
-                    new_stmts.append(stmt)
-                else:
-                    for af in active_forms:
-                        new_stmt = deepcopy(stmt)
-                        print('base stmt to modify is %s' % new_stmt)
-                        new_stmt.uuid = str(uuid.uuid4())
-#                        af.apply_to(new_stmt.enz)  #Need clean way to refer to appropriate agent in stmt. 
-                        for ind in binding_ag_index:
-#                        af.apply_to(new_stmt.agent_list()[binding_ag_index])  #Need clean way to refer to appropriate agent in stmt. 
-                            af.apply_to(new_stmt.agent_list()[ind])  #Need clean way to refer to appropriate agent in stmt. 
-                        new_stmts.append(new_stmt)    
-            else:
-                new_stmts.append(stmt)
-        self.statements = new_stmts
-        return new_stmts
-#################################3
-
-#    def require_active_forms_translocation(self,agent_list,upstream_list):
+#    def require_active_forms_complex_old(self,agent_list,upstream_list):
 #        new_stmts = []
+#        
 #        for stmt in self.statements:
 #            binding_ag_index = []
-#            if isinstance(stmt, Translocation):
+#            if isinstance(stmt, Complex):
 #                match=0
-#                ag = st.agent
-#                if any(list(map(lambda obj: obj.entity_matches(ag), upstream_list))): 
-#                    match = 0
-#                    break
-#                for ag2 in agent_list:
-#                    if ag.entity_matches(ag2):
-#                        match = 1
-#                        binding_ag = ag2
+#                for ag in stmt.agent_list():
+#                    if any(list(map(lambda obj: obj.entity_matches(ag), upstream_list))): 
+#                        match = 0
+#                        break
+#                    for ag2 in agent_list:
+#                        if ag.entity_matches(ag2):
+#                                match = 1
+#                                binding_ag = ag2
 ##                                binding_ag_index = stmt.agent_list().index(ag)
-#                        binding_ag_index.append(stmt.agent_list().index(ag))
+#                                binding_ag_index.append(stmt.agent_list().index(ag))
 #                if match == 0: 
 #                    new_stmts.append(stmt)
 #                    continue
@@ -293,7 +255,43 @@ class MechLinker(object):
 #        self.statements = new_stmts
 #        return new_stmts
 
-####################################3
+
+
+    def require_active_forms_complex(self):
+        new_stmts = []
+        for stmt in self.statements:
+            stmt = deepcopy(stmt)
+            if isinstance(stmt, Complex):
+                for ag in stmt.agent_list():
+                    ag_base = self._get_base(ag) 
+                    active_forms = ag_base.get_active_forms()
+                    
+                    if not active_forms:
+                        new_stmts.append(stmt)
+                    else:
+                        for af in active_forms:
+                            if af.mods:
+                                relStmts = ac.filter_by_type(ac.filter_gene_list(self.statements,list(map(lambda obj: obj.name, stmt.agent_list())),'all',remove_bound=True),Phosphorylation)
+                                #could try a filter_gene_list inverted to focus this stmt list 
+                                if relStmts[0].enz.name not in [el for el in list(map(lambda obj: obj.name, stmt.agent_list())) if el != ag.name]:                                
+                                    af.apply_to(ag) 
+                                    new_stmt = deepcopy(stmt)
+                                    new_stmt.uuid = str(uuid.uuid4())
+                                    new_stmts.append(new_stmt)    
+                                    print('newst af.mod %s' % new_stmt)
+                            elif af.bound_conditions:
+                                if not any(list(map(lambda obj: obj.entity_matches(af.bound_conditions[0].agent), stmt.agent_list()))): #Skip this, the agent is being activated here, don't want it already in af
+                                    af.apply_to(ag)  #This is going to screw up the original agent/stmt. Does this matter?
+                                    new_stmt = deepcopy(stmt)
+                                    new_stmt.uuid = str(uuid.uuid4())
+                                    new_stmts.append(new_stmt)    
+                                    print('newst af.bc %s' % new_stmt)
+
+            else:
+                new_stmts.append(stmt)
+        self.statements = new_stmts
+
+        return new_stmt
 
 
     def reduce_activities(self):
