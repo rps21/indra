@@ -640,7 +640,8 @@ def filter_gene_list(stmts_in, gene_list, policy, allow_families=False,
 
         for st in stmts_in:
             for agent in st.agent_list():
-                _remove_bound_conditions(agent, keep_criterion)
+                pass
+                #_remove_bound_conditions(agent, keep_criterion)
 
     if policy == 'one':
         for st in stmts_in:
