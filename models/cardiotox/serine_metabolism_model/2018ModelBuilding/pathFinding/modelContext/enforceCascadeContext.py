@@ -13,8 +13,7 @@ logging.getLogger("assemble_corpus").setLevel(logging.WARNING)
 
 
 #TODO: 
-#Outstanding question: does this handle multiple receptors and or ligands gracefully?
-#Test for infinite loops in while loop 
+
 
 #def add_receptor_ligand_activeform(stmts):
 #    """Identify receptor-ligand pairs and add appropriate active form for receptor.
@@ -33,11 +32,6 @@ logging.getLogger("assemble_corpus").setLevel(logging.WARNING)
 #    lig_list: list[indra.statements.Agent]
 #        A list of ligand agents
 #    """
-
-
-def get_agent_name(agent):
-    name = agent.name
-    return name
 
 #Functionalize searching for agent in statements by name
 def find_agent(stmts, inputName):
@@ -107,7 +101,7 @@ def find_rec_lig(stmts):
 def add_receptor_ligand_activeform(stmts):
     new_af_stmts = []
     ligRecPairs, ligRecPairAgents, recInCorpus = find_rec_lig(stmts)
-    rec_lig_stmts = ac.filter_gene_list(stmts,list(itertools.chain.from_iterable(ligRecPairs)),'all')
+    rec_lig_stmts = ac.filter_gene_list(stmts,list(itertools.chain.from_iterable(ligRecPairs)),'all',remove_bound=True)
     
     #Remove old phosphorylation statements involving only ligand and receptor, going to replace with new statements. 
     oldPhosStmts = []
@@ -140,14 +134,17 @@ def add_receptor_ligand_activeform(stmts):
 
             afAg = deepcopy(recAg)
             afAg.mods.append(ModCondition(mod_type='phosphorylation'))
+            #afAg.bound_conditions.append(BoundCondition(ligAg))
             af_stmt = ActiveForm(afAg,activity='activity',is_active=True)
             new_af_stmts.append(af_stmt)
 
         else: #no phos 
             ligAg = pair[0]     #Fix so that we have agents in pairs 
             recAg = pair[1] 
-            recAg.bound_conditions = [BoundCondition(ligAg)]
-            af_stmt = ActiveForm(recAg,activity='activity',is_active=True)
+
+            newRecAg = deepcopy(recAg)
+            newRecAg.bound_conditions = [BoundCondition(ligAg)]
+            af_stmt = ActiveForm(newRecAg,activity='activity',is_active=True)
             new_af_stmts.append(af_stmt)
 
 
@@ -174,8 +171,7 @@ def add_receptor_ligand_activeform(stmts):
 def findNextPPISet(stmts,oldPairsNames):
     newPairsNames = []
     for pair in oldPairsNames:
-
-        relevantStmts = ac.filter_gene_list(stmts,[pair[1]],'one')
+        relevantStmts = ac.filter_gene_list(stmts,[pair[1]],'one')#,remove_bound=True)
         for st in relevantStmts:
             if pair[0] not in list(map(lambda obj: obj.name, st.agent_list())):
                 for ag in st.agent_list():
@@ -188,11 +184,11 @@ def findNextPPISet(stmts,oldPairsNames):
 #Is there a better way for searching and indexing agents than the double loop?
 #Maybe just build a separate function that will be cleaner, but same effeciency
 
-def add_active_forms(stmts,newPairsNames):
+def add_active_form(stmts,newPairsNames):
     new_af_stmts = []
     af_agents = []
     for pair in newPairsNames:
-        relevantStmts = ac.filter_gene_list(stmts,list(pair),'all')
+        relevantStmts = ac.filter_gene_list(stmts,list(pair),'all')#,remove_bound=True)
         for st in relevantStmts:    
             if isinstance(st, Modification):    
                 newStmt = add_modification_active_form(st)
@@ -205,7 +201,7 @@ def add_active_forms(stmts,newPairsNames):
 #        elif isinstance(st, IncreaseAmount):
 #            new_af_stmts_init = add_transcription_active_form(st, upstream_list)
 #            new_af_stmts = new_af_stmts + new_af_stmts_init
-     
+#    new_af_stmts = reduce_complex_activeforms(new_af_stmts)
     new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts) 
     return new_af_stmts, af_agents
 
@@ -232,10 +228,11 @@ def add_complex_active_form(stmt, upstreamElement):
                 afAg = deepcopy(ag)
             else:
                 bindingAg = deepcopy(ag)
+    
     af_boundconditions = [BoundCondition(bindingAg)]
     afAg.bound_conditions = af_boundconditions
     af_stmt = ActiveForm(afAg,activity='activity',is_active=True)
-
+    
     return af_stmt 
 
 
@@ -243,28 +240,41 @@ def add_complex_active_form(stmt, upstreamElement):
 
 
 def add_all_af(stmts):
-    outputStmts,ligRecPairs,recInCorpus = add_receptor_ligand_activeform(stmts)
+    firstStmts,ligRecPairs,recInCorpus = add_receptor_ligand_activeform(stmts)
     i=0
     afAgents = recInCorpus
     oldPairs = ligRecPairs
+    recLig = list(itertools.chain.from_iterable(ligRecPairs))      
+    recLigStmts = ac.filter_gene_list(firstStmts,recLig,'all')
+    recAFStmts = ac.filter_by_type(recLigStmts,ActiveForm)
+    nonRecLigStmts = ac.filter_gene_list(firstStmts,recLig,'all',invert=True)
+    tmpStmts = nonRecLigStmts + recAFStmts
+
     while oldPairs:
-        newPairs = findNextPPISet(outputStmts,oldPairs)
+        newPairs = findNextPPISet(tmpStmts,oldPairs)
         newPairs = [pair for pair in newPairs if pair[1] not in afAgents]
-        newAFStmts, newAFAgents = add_active_forms(outputStmts,newPairs)
-        outputStmts = outputStmts + newAFStmts
+        newAFStmts, newAFAgents = add_active_form(tmpStmts,newPairs)
+        tmpStmts = tmpStmts + newAFStmts
+#        outputStmts = reduce_complex_activeforms(outputStmts)
         afAgents = afAgents + newAFAgents
         oldPairs = newPairs
 
+    stmts1 = run_mechlinker_step_reduced(recLigStmts)
+    #stmts1 = recLigStmts
+    stmts2 = run_mechlinker_step_reduced(tmpStmts)
+
+    outputStmts = stmts1 + stmts2
+    #outputStmts = reduce_complex_activeforms(outputStmts)
     return outputStmts
 
 
 
 def run_mechlinker_step_reduced(stmts):
     ml = MechLinker(stmts)
-    ml.gather_explicit_activities() #Why was this commented out?
+    ml.gather_explicit_activities() 
     ml.gather_modifications()
-    ml.require_active_forms() #THIS IS KEY
-    ml.require_active_forms_complex() #d.
+    ml.require_active_forms() 
+    ml.require_active_forms_complex() 
 
     updated_stmts = ml.statements
     output_stmts = Preassembler.combine_duplicate_stmts(updated_stmts)   
@@ -277,29 +287,32 @@ def run_mechlinker_step_reduced(stmts):
 
 ###################
 #If an agent has active forms for both bound and modification conditions, only keep mods
+#May need to build in an exception for receptors here. 
 def reduce_complex_activeforms(stmts):
     new_af_stmts = []
     af_stmts = ac.filter_by_type(stmts,ActiveForm)
     stmts_to_keep = ac.filter_by_type(stmts,ActiveForm,invert=True)
     af_agents = []
     for st in af_stmts:
-        if not any(list(map(lambda obj: obj.entity_matches(st.agent), af_agents))): 
+        if not any(list(map(lambda obj: obj.matches(st.agent), af_agents))): 
             af_agents.append(st.agent)
     for ag in af_agents:
-        ag_stmts = ac.filter_gene_list(stmts,[ag.name],'one')
+        ag_stmts = ac.filter_gene_list(stmts,[ag.name],'one',remove_bound=True)
         ag_af_stmts = ac.filter_by_type(ag_stmts,ActiveForm)
+#        print(ag_af_stmts)
         #all af statements for this agent 
         #Can I replace this whole block with 1-2 one liners?
         if(any([st.agent.mods for st in ag_af_stmts])): #if there are any mod AFs, going to ignore bound_conditions
             for st in ag_af_stmts:
                 if st.agent.mods:
-                    st.agent.bound_conditions = [] #This may be a terrible idea. Also should be copying
+                    #newSt = deepcopy(st)
+                    #newSt.agent.bound_conditions = [] #This may be a terrible idea. Also should be copying
                     stmts_to_keep.append(st)
                 elif st.is_active == False:
                     stmts_to_keep.append(st)
         else:
             stmts_to_keep = stmts_to_keep + ag_af_stmts
-    output_stmts =  stmts_to_keep
+    output_stmts = Preassembler.combine_duplicate_stmts(stmts_to_keep)
     return output_stmts
 
 
@@ -315,7 +328,7 @@ def combine_multiple_phos_activeforms(stmts):
         if not any(list(map(lambda obj: obj.entity_matches(st.agent), af_agents))): 
             af_agents.append(st.agent)
     for ag in af_agents:
-        ag_stmts = ac.filter_gene_list(stmts,[ag.name],'one')
+        ag_stmts = ac.filter_gene_list(stmts,[ag.name],'one',remove_bound=True)
         ag_af_stmts = ac.filter_by_type(ag_stmts,ActiveForm)
     
         all_mods = []

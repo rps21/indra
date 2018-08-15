@@ -328,7 +328,7 @@ def run_mechlinker_step_reduced(stmts,downstream_list,upstream_list):
     for i in range(len(downstream_list)):
 #        ml = MechLinker(stmts)
         print(i)
-        ml.require_active_forms_complex(downstream_list[i], upstream_list[i]) #reexamine why input list of agents is needed.
+        ml.require_active_forms_complex_old(downstream_list[i], upstream_list[i]) #reexamine why input list of agents is needed.
         updated_stmts = ml.statements
         updated_stmts = Preassembler.combine_duplicate_stmts(updated_stmts)      
         ml = MechLinker(updated_stmts)
