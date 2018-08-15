@@ -273,9 +273,9 @@ class MechLinker(object):
                             if af.mods:
                                 relStmts = ac.filter_by_type(ac.filter_gene_list(self.statements,list(map(lambda obj: obj.name, stmt.agent_list())),'one',remove_bound=True),Phosphorylation)                   
 
-                                print(stmt)
-                                print(ag)
-                                print(relStmts)
+#                                print(stmt)
+#                                print(ag)
+#                                print(relStmts)
                                 ag_activators = []
                                 for st in relStmts:
 #                                    if st.sub.name == ag.name:
@@ -285,11 +285,12 @@ class MechLinker(object):
 #                                    print('Relstmts for agent %s in stmt %s are\n %s' % (ag,stmt,relStmts))
 
                                     if st.sub.name == ag.name:
+                                        ag_activators.append(st.enz.name)
                                         if st.enz.bound_conditions:
 #                                            print('has bc %s' % st.enz.bound_conditions[0].agent.name)
                                             ag_activators.append(st.enz.bound_conditions[0].agent.name)
-                                        else:
-                                            ag_activators.append(st.enz.name)
+                                        #else:
+                                            
 #                                            print('no bc %s' %  st.enz.name)
 
                                 #check if any activators (names) are in this statement, if so, skip 
@@ -302,10 +303,10 @@ class MechLinker(object):
                                 else:
                                     new_stmts.append(stmt) #is this necessary/correct?
                             
-#                                print(stmt)
-#                                print(ag)
-#                                print(ag_activators)
-        
+                                print(stmt)
+                                print(ag)
+                                print(ag_activators)
+                                print(relStmts)
 
                             elif af.bound_conditions:
                                 if not any(list(map(lambda obj: obj.entity_matches(af.bound_conditions[0].agent), stmt.agent_list()))): #Skip this, the agent is being activated here, don't want it already in af
