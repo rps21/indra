@@ -21,7 +21,7 @@ def collect_agent_name_list(stmts):
 
 
 def find_all_ptm_sites(stmts,name):
-    relevantStatements = ac.filter_gene_list(stmts,[name],'one')
+    relevantStatements = ac.filter_gene_list(stmts,[name],'one',remove_bound=True)
     uniqueMods = []
     for st in relevantStatements:
         for ag in st.agent_list():
@@ -37,7 +37,7 @@ def find_all_ptm_sites(stmts,name):
 #Two sites in full set, not in af set:  (phosphorylation, T, 599), (phosphorylation, S, 602)]
 
 def find_act_inhib_sites(stmts,name):
-    relevantStatements = ac.filter_gene_list(stmts,[name],'one')
+    relevantStatements = ac.filter_gene_list(stmts,[name],'one',remove_bound=True)
     af_stmts = ac.filter_by_type(relevantStatements,ActiveForm)
     actMods = []
     inhibMods = []
@@ -99,9 +99,8 @@ def build_ptm_dict_keepres(stmts,name):
 
 
 def replace_ptms(stmts,name,dictionary):
-    relevantStatements = ac.filter_gene_list(stmts,[name],'one')
+    relevantStatements = ac.filter_gene_list(stmts,[name],'one',remove_bound=True)
     otherStatements = [st for st in stmts if st not in relevantStatements] 
-    for st in relevantStatements:
         for ag in st.agent_list():
             #change context on any agents 
             if ag.name == name:
