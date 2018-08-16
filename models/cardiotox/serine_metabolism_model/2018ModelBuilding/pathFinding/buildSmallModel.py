@@ -1,51 +1,47 @@
-import removeDimersMutants as rdm
-import combinePhosphorylationSites as cps
-import enforceCascadeContext as ecc
-import addDephosphorylationAndDegradationRules as add
-import findOligomers as fo
-from indra.tools import assemble_corpus as ac 
-from indra.assemblers import PysbAssembler
+import pickle
+from indra.tools import assemble_corpus as ac
+from indra.mechlinker import MechLinker
 from indra.statements import *
+from indra.sources import trips
+from indra.preassembler import Preassembler
+from modelContext import enforceCascadeContext as cs
+from modelContext import combinePhosphorylationSites as ptm
+from modelContext import addImplicitMechs as aim
+from indra.assemblers import PysbAssembler
 import pysb
+from addBNGLParameters import addSimParamters
 
-def buildSmallModel(stmts):
-    stmts = rdm.remove_mutations(stmts)
-    stmts = rdm.remove_dimers(stmts)
-    stmts = rdm.remove_bad_translocations(stmts)
-    stmts, uplist, downlist = ecc.add_all_af(stmts)     
-    stmts = ecc.run_mechlinker_step_reduced(stmts, uplist, downlist)
-    stmts = cps.coarse_grain_phos(stmts)    #Can have extra input here, generic = T/F
-    stmts = add.add_dephosphorylations(stmts)
-    stmts = add.add_deegradations(stmts)
-    cycles = fo.findCycles(stmts)
+#sentences = 'EGF binds EGFR. EGFR phosphorylates EGFR. EGFR binds EGFR.EGFR binds GRB2. GRB2 bounds SOS1, EGFR binds SOS1. SOS1 phosphorylates KRAS. KRAS phosphorylates BRAF. KDR binds VEGFC. KDR binds SRC. KDR phosphorylates SRC. SRC phosphorylates AKT1.'
+##sentences = 'EGF binds EGFR. EGFR phosphorylates EGFR. EGFR binds EGFR. EGFR binds GRB2. KDR binds VEGFC. KDR binds SRC'
 
-    pa = PysbAssembler('two_step')
-    pa.add_statements(stmts)
-    model = pa.make_model()
-     
-    bngl_model = pysb.export.export(model,'bngl')
-    bngl_file = open('smallModel.bngl','w')  #Add optional input for naming output file?
-    bngl_file.write(bngl_model)
-    bngl_file.close()
-
-    return stmts, cycles
-
-stmts = ac.load_statements('/home/bobby/Dropbox/Sorger_Lab/indra/models/submodel_testing/TestingCode/debugging/fallahi_eval_pysb_stmts_updated.pkl')
-egfrGenes = ['EGF','EGFR','GRB2','SOS1','KRAS','BRAF','MAP2K1','MAPK1']
-egfrStmts = ac.filter_gene_list(stmts,egfrGenes,'all')
-#egfrStmts = ac.filter_by_type(egfrStmts,Autophosphorylation,invert=True)
-newStmts, cycles = buildSmallModel(egfrStmts)
+#tp = trips.process_text(sentences)
+#testStmts = tp.statements
 
 
+testStmts = ac.load_statements('contextTestStmts.pkl')
+finalStmts = cs.add_all_af(testStmts)
+finalStmts2 = ptm.coarse_grain_phos(finalStmts)
+finalStmts3 = aim.addAll(finalStmts2)
 
-#autophosphoyrlation - not being caught in phosphorylation adjustment. Keep? Throw away?
-#Additionally, activeforms with phos get precedent. If there's no accompanying phosphorylation statement, problem
-#EGFR hits both these 
+pa = PysbAssembler()
+pa.add_statements(testStmts)
+originalModel = pa.make_model()
+
+bngl_model = pysb.export.export(originalModel,'bngl')
+with open('bnglModelTesting/originalModel.bngl','w') as bnglFile:
+    bnglFile.write(bngl_model)
+    actionsBlock = addSimParamters('ode',True,['EGF(erbb)'])
+    bnglFile.write(actionsBlock)
 
 
-#DONE
-#generic phosphorylations with no residue sneaking through
-#   Comes from dephosphorylation. Probably doesn't like changed residue names. 
-#   Had to edit statements.py to not check if a residue is valid. This seems super dangerous, need a better workaround.
-#Remove translocations, minimially ones with a None component
-#check if all cycles are being returned, or only one 
+pa = PysbAssembler()
+pa.add_statements(finalStmts3)
+modifiedModel = pa.make_model()
+
+bngl_model = pysb.export.export(modifiedModel,'bngl')
+with open('bnglModelTesting/modifiedModel.bngl','w') as bnglFile:
+    bnglFile.write(bngl_model)
+    actionsBlock = addSimParamters('ode',True,['EGF(erbb)'])
+    bnglFile.write(actionsBlock)
+
+
