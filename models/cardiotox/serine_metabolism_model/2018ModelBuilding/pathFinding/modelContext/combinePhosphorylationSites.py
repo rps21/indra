@@ -33,9 +33,6 @@ def find_all_ptm_sites(stmts,name):
     return uniqueMods
 
 
-
-#Two sites in full set, not in af set:  (phosphorylation, T, 599), (phosphorylation, S, 602)]
-
 def find_act_inhib_sites(stmts,name):
     relevantStatements = ac.filter_gene_list(stmts,[name],'one',remove_bound=True)
     af_stmts = ac.filter_by_type(relevantStatements,ActiveForm)
@@ -108,7 +105,6 @@ def replace_ptms(stmts,name,dictionary):
                 newmodlist = []
                 for mod in ag.mods:
                     if str(mod) in list(dictionary.keys()):
-#                    if any([checkmod for checkmod in list(dictionary.keys()) if checkmod.matches(mod)]):
                         newmod = deepcopy(mod)
                         newmod.residue = dictionary[str(mod)]
                         newmod.position = None
@@ -116,12 +112,12 @@ def replace_ptms(stmts,name,dictionary):
                             newmodlist.append(newmod)
                     else:
                         if not any([mod1 for mod1 in newmodlist if mod.matches(mod1)]):
-                            newmodlist.append(mod)
+                            newmodlist
+.append(mod)
                 ag.mods = newmodlist 
         #change phosphorylated residues on a substrate 
         if isinstance(st,Modification):
             for entry in list(dictionary.keys()):
-#                if st.sub.name == name and st.residue == entry.residue and st.position == entry.position:   #Don't love all the string matching here
                 try:
                     pos = entry.split(',')[2].strip().strip(')')
                 except IndexError:
@@ -154,8 +150,6 @@ def remove_dup_phos(stmts):
                     new_mod_list.append(mod)
             ag.mods = new_mod_list
     return outputStmts
-
-
 
 
 def coarse_grain_phos(stmts,generic=True):
