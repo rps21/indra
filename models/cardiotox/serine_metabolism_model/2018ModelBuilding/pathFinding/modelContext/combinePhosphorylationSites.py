@@ -101,6 +101,7 @@ def build_ptm_dict_keepres(stmts,name):
 def replace_ptms(stmts,name,dictionary):
     relevantStatements = ac.filter_gene_list(stmts,[name],'one',remove_bound=True)
     otherStatements = [st for st in stmts if st not in relevantStatements] 
+    for st in relevantStatements:
         for ag in st.agent_list():
             #change context on any agents 
             if ag.name == name:
