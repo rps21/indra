@@ -98,8 +98,6 @@ def find_rec_lig(stmts):
 #Exception: if there is phosphorylation of receptor without outside kinase i.e. cis or trans phos following ligand binding 
     #In this case phosphorylation is the active form, but the phosphorylation reaction should require ligand binding. 
 
-#list(map(lambda obj: obj.name, list(itertools.chain.from_iterable(ligRecPairAgentList)))) #Get names form list of tuples of agents
-
 def add_receptor_ligand_activeform(stmts):
     new_af_stmts = []
     ligRecPairs, ligRecPairAgents, recInCorpus = find_rec_lig(stmts)
@@ -126,22 +124,21 @@ def add_receptor_ligand_activeform(stmts):
     for pair in ligRecPairAgents:
         if any([el for el in pair if el.name in phos_rec]):
 
-            ligAg = pair[0]     #Fix so that we have agents in pairs 
+            ligAg = pair[0]      
             recAg = pair[1] 
 
             kinAg = deepcopy(recAg)
             kinAg.bound_conditions = [BoundCondition(ligAg)]
-            newPhosStmt = Phosphorylation(kinAg,recAg)#Is this dangerous/wrong? Should I be checking and modifying phos stmts directly? Minimaly need to remove old ones
+            newPhosStmt = Phosphorylation(kinAg,recAg)
             new_af_stmts.append(newPhosStmt)
 
             afAg = deepcopy(recAg)
             afAg.mods.append(ModCondition(mod_type='phosphorylation'))
-            #afAg.bound_conditions.append(BoundCondition(ligAg))
             af_stmt = ActiveForm(afAg,activity='activity',is_active=True)
             new_af_stmts.append(af_stmt)
 
         else: #no phos 
-            ligAg = pair[0]     #Fix so that we have agents in pairs 
+            ligAg = pair[0]     
             recAg = pair[1] 
 
             newRecAg = deepcopy(recAg)
@@ -156,11 +153,6 @@ def add_receptor_ligand_activeform(stmts):
 
 
 
-#identify statements that have receptor but no ligand 
-#this allows us to focus on 'next level' 
-#i.e. proteins that bind receptor following ligation 
-#then build af stmts for these 
-#should be able to generalize this beyond rec-lig and cut down a function later
 
 #Work with tuples
 #tuple[0] is upstream 
@@ -173,7 +165,7 @@ def add_receptor_ligand_activeform(stmts):
 def findNextPPISet(stmts,oldPairsNames):
     newPairsNames = []
     for pair in oldPairsNames:
-        relevantStmts = ac.filter_gene_list(stmts,[pair[1]],'one')#,remove_bound=True)
+        relevantStmts = ac.filter_gene_list(stmts,[pair[1]],'one')
         for st in relevantStmts:
             if pair[0] not in list(map(lambda obj: obj.name, st.agent_list())):
                 for ag in st.agent_list():
@@ -182,15 +174,13 @@ def findNextPPISet(stmts,oldPairsNames):
                         newPairsNames.append(newPair)
     newPairsNames = list(set(newPairsNames))
     return newPairsNames
-#names or agents best?
-#Is there a better way for searching and indexing agents than the double loop?
-#Maybe just build a separate function that will be cleaner, but same effeciency
+
 
 def add_active_form(stmts,newPairsNames):
     new_af_stmts = []
     af_agents = []
     for pair in newPairsNames:
-        relevantStmts = ac.filter_gene_list(stmts,list(pair),'all')#,remove_bound=True)
+        relevantStmts = ac.filter_gene_list(stmts,list(pair),'all')
         for st in relevantStmts:    
             if isinstance(st, Modification):    
                 newStmt = add_modification_active_form(st)
@@ -203,7 +193,6 @@ def add_active_form(stmts,newPairsNames):
 #        elif isinstance(st, IncreaseAmount):
 #            new_af_stmts_init = add_transcription_active_form(st, upstream_list)
 #            new_af_stmts = new_af_stmts + new_af_stmts_init
-#    new_af_stmts = reduce_complex_activeforms(new_af_stmts)
     new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts) 
     return new_af_stmts, af_agents
 
@@ -214,8 +203,7 @@ def add_modification_active_form(stmt):
     af_agent = deepcopy(stmt.sub)
     af_mods = [stmt._get_mod_condition()] #need to enclose in list 
     af_agent.mods = af_mods
-    af_stmt = ActiveForm(af_agent,activity='activity',is_active=True)  #Kinase here is too specific. May be able to take any string
-    #new_af_stmts.append(af_stmt) #This leads to a duplicate if there is no new af_stmts (if stmt is not Modification or Compl
+    af_stmt = ActiveForm(af_agent,activity='activity',is_active=True)  
 
     return af_stmt 
 
@@ -257,12 +245,10 @@ def add_all_af(stmts):
         newPairs = [pair for pair in newPairs if pair[1] not in afAgents]
         newAFStmts, newAFAgents = add_active_form(tmpStmts,newPairs)
         tmpStmts = tmpStmts + newAFStmts
-#        outputStmts = reduce_complex_activeforms(outputStmts)
         afAgents = afAgents + newAFAgents
         oldPairs = newPairs
 
     stmts1 = run_mechlinker_step_reduced(recLigStmts)
-    #stmts1 = recLigStmts
     stmts2 = run_mechlinker_step_reduced(tmpStmts)
 
     outputStmts = stmts1 + stmts2

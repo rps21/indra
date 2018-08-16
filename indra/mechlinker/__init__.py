@@ -217,50 +217,9 @@ class MechLinker(object):
         self.statements = new_stmts
         return new_stmts
 
-    def require_active_forms_complex_old(self,agent_list,upstream_list):
-        new_stmts = []
-        
-        for stmt in self.statements:
-            binding_ag_index = []
-            if isinstance(stmt, Complex):
-                match=0
-                for ag in stmt.agent_list():
-                    if any(list(map(lambda obj: obj.entity_matches(ag), upstream_list))): 
-                        match = 0
-                        break
-                    for ag2 in agent_list:
-                        if ag.entity_matches(ag2):
-                                match = 1
-                                binding_ag = ag2
-#                                binding_ag_index = stmt.agent_list().index(ag)
-                                binding_ag_index.append(stmt.agent_list().index(ag))
-                if match == 0: 
-                    new_stmts.append(stmt)
-                    continue
-                ag_base = self._get_base(binding_ag) 
-                active_forms = ag_base.get_active_forms()
-                if not active_forms:
-                    new_stmts.append(stmt)
-                else:
-                    for af in active_forms:
-                        new_stmt = deepcopy(stmt)
-                        new_stmt.uuid = str(uuid.uuid4())
-#                        af.apply_to(new_stmt.enz)  #Need clean way to refer to appropriate agent in stmt. 
-                        for ind in binding_ag_index:
-#                        af.apply_to(new_stmt.agent_list()[binding_ag_index])  #Need clean way to refer to appropriate agent in stmt. 
-                            af.apply_to(new_stmt.agent_list()[ind])  #Need clean way to refer to appropriate agent in stmt. 
-                        new_stmts.append(new_stmt)    
-            else:
-                new_stmts.append(stmt)
-        self.statements = new_stmts
-        return new_stmts
-
-
-
     def require_active_forms_complex(self):
         new_stmts = []
         for stmt in self.statements:
-
             if isinstance(stmt, Complex):
                 for ag in stmt.agent_list():
                     ag_base = self._get_base(ag) 
@@ -272,26 +231,12 @@ class MechLinker(object):
                         for af in active_forms:
                             if af.mods:
                                 relStmts = ac.filter_by_type(ac.filter_gene_list(self.statements,list(map(lambda obj: obj.name, stmt.agent_list())),'one',remove_bound=True),Phosphorylation)                   
-
-#                                print(stmt)
-#                                print(ag)
-#                                print(relStmts)
                                 ag_activators = []
                                 for st in relStmts:
-#                                    if st.sub.name == ag.name:
-#                                        ag_activators.append(st.enz.name)
-#                                        if st.enz.bound_conditions:
-#                                            ag_activators.append(st.enz.bound_conditions[0].agent.name)
-#                                    print('Relstmts for agent %s in stmt %s are\n %s' % (ag,stmt,relStmts))
-
                                     if st.sub.name == ag.name:
                                         ag_activators.append(st.enz.name)
                                         if st.enz.bound_conditions:
-#                                            print('has bc %s' % st.enz.bound_conditions[0].agent.name)
                                             ag_activators.append(st.enz.bound_conditions[0].agent.name)
-                                        #else:
-                                            
-#                                            print('no bc %s' %  st.enz.name)
 
                                 #check if any activators (names) are in this statement, if so, skip 
                                 if not [el for el in stmt.agent_list() if el.name in ag_activators]:
@@ -299,48 +244,18 @@ class MechLinker(object):
                                     new_stmt = deepcopy(stmt)
                                     new_stmt.uuid = str(uuid.uuid4())
                                     new_stmts.append(new_stmt)    
-#                                    print('appended pt 1 %s' % new_stmt)
                                 else:
                                     new_stmts.append(stmt) #is this necessary/correct?
                             
-                                print(stmt)
-                                print(ag)
-                                print(ag_activators)
-                                print(relStmts)
-
                             elif af.bound_conditions:
                                 if not any(list(map(lambda obj: obj.entity_matches(af.bound_conditions[0].agent), stmt.agent_list()))): #Skip this, the agent is being activated here, don't want it already in af
-                                    af.apply_to(ag)  #This is going to screw up the original agent/stmt. Does this matter?
+                                    af.apply_to(ag)  
                                     new_stmt = deepcopy(stmt)
                                     new_stmt.uuid = str(uuid.uuid4())
                                     new_stmts.append(new_stmt)  
-
-
-#                                #could try a filter_gene_list inverted to focus this stmt list 
-#                                if relStmts:
-#                                    print('stmt is %s' % stmt)
-#                                    print('all relStmts are %s' % relStmts)
-#                                    if relStmts[0].enz.name not in [el for el in list(map(lambda obj: obj.name, stmt.agent_list())) if el != ag.name]:   
-##                                        print(relStmts)
-#                                        if relStmts[0].enz.bound_conditions:
-#                                            if relStmts[0].enz.bound_conditions[0].agent.name not in [el for el in list(map(lambda obj: obj.name, stmt.agent_list())) if el != ag.name]:                                                             
-#                                                af.apply_to(ag) 
-#                                                new_stmt = deepcopy(stmt)
-#                                                new_stmt.uuid = str(uuid.uuid4())
-#                                                new_stmts.append(new_stmt)    
-##                                                print('appended pt 1 %s' % new_stmt)
-#                                        else:
-#                                            af.apply_to(ag) 
-#                                            new_stmt = deepcopy(stmt)
-#                                            new_stmt.uuid = str(uuid.uuid4())
-#                                            new_stmts.append(new_stmt)
-#                                            print('appended pt 2 %s' % new_stmt)
-  
-
             else:
                 new_stmts.append(stmt)
         self.statements = new_stmts
-
         return new_stmts
 
 
