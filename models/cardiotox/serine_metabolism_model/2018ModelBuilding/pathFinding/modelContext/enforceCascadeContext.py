@@ -249,11 +249,12 @@ def add_all_af(stmts):
         afAgents = afAgents + newAFAgents
         oldPairs = newPairs
 
+    recLigStmts = reduce_complex_activeforms(recLigStmts)
+    tmpStmts = reduce_complex_activeforms(tmpStmts)
     stmts1 = run_mechlinker_step_reduced(recLigStmts)
     stmts2 = run_mechlinker_step_reduced(tmpStmts)
 
     outputStmts = stmts1 + stmts2
-    outputStmts = reduce_complex_activeforms(outputStmts)
     outputStmts = Preassembler.combine_duplicate_stmts(outputStmts)
     return outputStmts
 
