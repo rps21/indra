@@ -100,6 +100,7 @@ def find_rec_lig(stmts):
 
 def add_receptor_ligand_activeform(stmts):
     new_af_stmts = []
+    outputStmts = []
     ligRecPairs, ligRecPairAgents, recInCorpus = find_rec_lig(stmts)
     rec_lig_stmts = ac.filter_gene_list(stmts,list(itertools.chain.from_iterable(ligRecPairs)),'all',remove_bound=True)
     
