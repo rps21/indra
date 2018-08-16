@@ -13,7 +13,9 @@ logging.getLogger("assemble_corpus").setLevel(logging.WARNING)
 
 
 #TODO: 
-
+#Handle rec dimers
+# Complex(EGFR(), EGFR()),
+#Right now they have no effect on model behaivor other than complexity
 
 #def add_receptor_ligand_activeform(stmts):
 #    """Identify receptor-ligand pairs and add appropriate active form for receptor.
@@ -264,7 +266,8 @@ def add_all_af(stmts):
     stmts2 = run_mechlinker_step_reduced(tmpStmts)
 
     outputStmts = stmts1 + stmts2
-    #outputStmts = reduce_complex_activeforms(outputStmts)
+    outputStmts = reduce_complex_activeforms(outputStmts)
+    outputStmts = Preassembler.combine_duplicate_stmts(outputStmts)
     return outputStmts
 
 
@@ -285,9 +288,9 @@ def run_mechlinker_step_reduced(stmts):
 
 
 
-###################
-#If an agent has active forms for both bound and modification conditions, only keep mods
-#May need to build in an exception for receptors here. 
+####################
+##If an agent has active forms for both bound and modification conditions, only keep mods
+##May need to build in an exception for receptors here. 
 def reduce_complex_activeforms(stmts):
     new_af_stmts = []
     af_stmts = ac.filter_by_type(stmts,ActiveForm)
@@ -316,42 +319,42 @@ def reduce_complex_activeforms(stmts):
     return output_stmts
 
 
-#Making multiple phos af's 'and' gated
-#Can loop through all proteins (going to be very slow) and pull out all af statements for a given protein
+##Making multiple phos af's 'and' gated
+##Can loop through all proteins (going to be very slow) and pull out all af statements for a given protein
 
-def combine_multiple_phos_activeforms(stmts):
-    new_af_stmts = []
-    af_stmts = ac.filter_by_type(stmts,ActiveForm)
-    output_stmts = ac.filter_by_type(stmts,ActiveForm,invert=True)
-    af_agents = []
-    for st in af_stmts:
-        if not any(list(map(lambda obj: obj.entity_matches(st.agent), af_agents))): 
-            af_agents.append(st.agent)
-    for ag in af_agents:
-        ag_stmts = ac.filter_gene_list(stmts,[ag.name],'one',remove_bound=True)
-        ag_af_stmts = ac.filter_by_type(ag_stmts,ActiveForm)
-    
-        all_mods = []
-        for st in ag_af_stmts:
-            if st.agent.bound_conditions:
-                output_stmts.append(st)
-            elif st.is_active == False:
-                output_stmts.append(st)
-            else:
-                all_mods = all_mods + st.agent.mods
-        new_mods = []
-        for mod in all_mods:
-            if not any(list(map(lambda obj: obj.matches(mod), new_mods))):
-                new_mods.append(mod)
-        if any([mod.residue for mod in all_mods]):
-            #remove any mods with no residue
-            new_mods = [mod for mod in all_mods if mod.residue] 
+#def combine_multiple_phos_activeforms(stmts):
+#    new_af_stmts = []
+#    af_stmts = ac.filter_by_type(stmts,ActiveForm)
+#    output_stmts = ac.filter_by_type(stmts,ActiveForm,invert=True)
+#    af_agents = []
+#    for st in af_stmts:
+#        if not any(list(map(lambda obj: obj.entity_matches(st.agent), af_agents))): 
+#            af_agents.append(st.agent)
+#    for ag in af_agents:
+#        ag_stmts = ac.filter_gene_list(stmts,[ag.name],'one',remove_bound=True)
+#        ag_af_stmts = ac.filter_by_type(ag_stmts,ActiveForm)
+#    
+#        all_mods = []
+#        for st in ag_af_stmts:
+#            if st.agent.bound_conditions:
+#                output_stmts.append(st)
+#            elif st.is_active == False:
+#                output_stmts.append(st)
+#            else:
+#                all_mods = all_mods + st.agent.mods
+#        new_mods = []
+#        for mod in all_mods:
+#            if not any(list(map(lambda obj: obj.matches(mod), new_mods))):
+#                new_mods.append(mod)
+#        if any([mod.residue for mod in all_mods]):
+#            #remove any mods with no residue
+#            new_mods = [mod for mod in all_mods if mod.residue] 
 
-        af_agent = deepcopy(ag)
-        af_mods = new_mods
-        af_agent.mods = af_mods
-        new_afstmt = ActiveForm(af_agent,activity='kinase',is_active=True)
-        new_af_stmts.append(new_afstmt)
-        output_stmts = new_af_stmts + output_stmts
-    return output_stmts
+#        af_agent = deepcopy(ag)
+#        af_mods = new_mods
+#        af_agent.mods = af_mods
+#        new_afstmt = ActiveForm(af_agent,activity='kinase',is_active=True)
+#        new_af_stmts.append(new_afstmt)
+#        output_stmts = new_af_stmts + output_stmts
+#    return output_stmts
 
