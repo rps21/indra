@@ -66,17 +66,24 @@ def addSimParamters(method='ode',equil=True,equilSpecies=[],viz=True):
 #Maybe 
 #GRB2(erbb!+)    GRB2(erbb=1)
 #SOS1(erbb!+)    SOS1(erbb=1)
-        
 
-for monomer in pysbModel.monomers:
-    for site in monomer.sites: 
-        if monomer.site_states[site]:   #means a site has a flippable state 
-            pattern = MonomerPatter(compartment=None,monomer=monomer,site_conditions={site:site_states[site][1]})   #Should see if [1] is always the perturbed/activated state
-            pysbModel.observables.add(Observable(name='blah',reaction_pattern=pattern))
-        #Need to decide if want to include binding and/or make optional 
-        else:
-            pattern = MonomerPatter(compartment=None,monomer=monomer,site_conditions={site:1})
-            pysbModel.observables.add(Observable(name='blah',reaction_pattern=pattern))
+from pysb.core import MonomerPattern
+        
+def addObservables(pysbModel):
+    i=1
+    for monomer in pysbModel.monomers:
+        for site in monomer.sites: 
+            try:
+                monomer.site_states[site]  #means a site has a flippable state 
+                pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:monomer.site_states[site][1]})   #Should see if [1] is always the perturbed/activated state
+                pysbModel.observables.add(Observable(name='blah%s'%i,reaction_pattern=pattern))
+                i=1+i
+            #Need to decide if want to include binding and/or make optional 
+            except KeyError:
+                pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:WILD})
+                pysbModel.observables.add(Observable(name='blah%s'%i,reaction_pattern=pattern))
+                i=1+i
+    return pysbModel
 
 
 #srcMon = originalModel.monomers[2]
