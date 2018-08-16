@@ -166,7 +166,7 @@ def add_receptor_ligand_activeform(stmts):
 def findNextPPISet(stmts,oldPairsNames):
     newPairsNames = []
     for pair in oldPairsNames:
-        relevantStmts = ac.filter_gene_list(stmts,[pair[1]],'one')
+        relevantStmts = ac.filter_gene_list(stmts,[pair[1]],'one',remove_bound=True)
         for st in relevantStmts:
             if pair[0] not in list(map(lambda obj: obj.name, st.agent_list())):
                 for ag in st.agent_list():
@@ -181,7 +181,7 @@ def add_active_form(stmts,newPairsNames):
     new_af_stmts = []
     af_agents = []
     for pair in newPairsNames:
-        relevantStmts = ac.filter_gene_list(stmts,list(pair),'all')
+        relevantStmts = ac.filter_gene_list(stmts,list(pair),'all',remove_bound=True)
         for st in relevantStmts:    
             if isinstance(st, Modification):    
                 newStmt = add_modification_active_form(st)
@@ -236,9 +236,9 @@ def add_all_af(stmts):
     afAgents = recInCorpus
     oldPairs = ligRecPairs
     recLig = list(itertools.chain.from_iterable(ligRecPairs))      
-    recLigStmts = ac.filter_gene_list(firstStmts,recLig,'all')
+    recLigStmts = ac.filter_gene_list(firstStmts,recLig,'all',remove_bound=True)
     recAFStmts = ac.filter_by_type(recLigStmts,ActiveForm)
-    nonRecLigStmts = ac.filter_gene_list(firstStmts,recLig,'all',invert=True)
+    nonRecLigStmts = ac.filter_gene_list(firstStmts,recLig,'all',invert=True,remove_bound=True)
     tmpStmts = nonRecLigStmts + recAFStmts
 
     while oldPairs:

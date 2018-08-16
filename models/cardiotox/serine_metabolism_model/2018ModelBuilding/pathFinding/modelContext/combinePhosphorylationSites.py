@@ -122,7 +122,23 @@ def replace_ptms(stmts,name,dictionary):
         if isinstance(st,Modification):
             for entry in list(dictionary.keys()):
 #                if st.sub.name == name and st.residue == entry.residue and st.position == entry.position:   #Don't love all the string matching here
-                if st.sub.name == name and st.residue == entry.split(',')[1].strip() and st.position == entry.split(',')[2].strip().strip(')'):   #Don't love all the string matching here
+                try:
+                    pos = entry.split(',')[2].strip().strip(')')
+                except IndexError:
+                    pos = None
+                if pos:
+                    try: 
+                        res = entry.split(',')[1].strip()
+                    except IndexError:
+                        res = None
+                else:
+                    try: 
+                        res = entry.split(',')[1].strip().strip(')')
+                    except IndexError:
+                        res = None
+
+
+                if st.sub.name == name and st.residue == res and st.position == pos:   
                     st.residue = dictionary[str(entry)]
                     st.position = None
     outputStmts = relevantStatements + otherStatements
