@@ -50,5 +50,59 @@ def addSimParamters(method='ode',equil=True,equilSpecies=[],viz=True):
 #Can pass as a string, but not ideal for 
 #Could write a function to parse seed speices based on species name 
 
+#In [24]: species_codes = [pysb.generator.bng.format_complexpattern(cp) for cp, param in originalModel.initial_conditions]
+
+#In [25]: species_codes
+#Out[25]: 
+#['GRB2(erbb)',
+# 'SOS1(erbb)',
+
+#species codes - should be useful for grabbing species for setConcentration
+
+
+
+#Want as observables:
+#SRC(vegfr?~p)   SRC(phospho='p')
+#Maybe 
+#GRB2(erbb!+)    GRB2(erbb=1)
+#SOS1(erbb!+)    SOS1(erbb=1)
+        
+
+for monomer in pysbModel.monomers:
+    for site in monomer.sites: 
+        if monomer.site_states[site]:   #means a site has a flippable state 
+            pattern = MonomerPatter(compartment=None,monomer=monomer,site_conditions={site:site_states[site][1]})   #Should see if [1] is always the perturbed/activated state
+            pysbModel.observables.add(Observable(name='blah',reaction_pattern=pattern))
+        #Need to decide if want to include binding and/or make optional 
+        else:
+            pattern = MonomerPatter(compartment=None,monomer=monomer,site_conditions={site:1})
+            pysbModel.observables.add(Observable(name='blah',reaction_pattern=pattern))
+
+
+#srcMon = originalModel.monomers[2]
+#srcPhosSite = srcMon.sites[1]   #[0] is binding 
+#srcPhosState = srcMon.site_states[srcPhosSite][1] #[0] is unphos
+#srcPhosPattern = pysb.core.MonomerPattern(compartment=None,monomer=srcMon,site_conditions={srcPhosSite:srcPhosState})
+
+#srcBindSite = srcMon.sites[0]
+##srcBindState = srcMon.site_states[srcBindSite]  #doesn't exist
+#srcBindPattern = pysb.core.MonomerPattern(compartment=None,monomer=srcMon,site_conditions={srcBindSite:1})
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
