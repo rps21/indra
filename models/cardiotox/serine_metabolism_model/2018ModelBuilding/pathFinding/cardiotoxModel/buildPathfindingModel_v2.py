@@ -159,7 +159,7 @@ from indra.tools.small_model_tools import combinePhosphorylationSites as ptm
 #newstmts = cs.run_mechlinker_step_reduced(newstmts, uplist, downlist)
 #largeModelStmts_contextChanges = ptm.coarse_grain_phos(newstmts)
 
-newstmts, uplist, downlist = cs.add_all_af(smallModelStmts)     
+newstmts, uplist, downlist = cs.add_all_af(prelimSmallStmts)     
 smallModelStmts_contextChanges = cs.run_mechlinker_step_reduced(newstmts, uplist, downlist)
 smallModelStmts_contextChanges = ptm.coarse_grain_phos(newstmts)
 
@@ -168,31 +168,31 @@ smallModelStmts_contextChanges = ptm.coarse_grain_phos(newstmts)
 
 
 
-#######################################################
-#Add manual stmts for Sorafenib interactions 
-#May want to check these for complex vs inhibition
 ########################################################
+##Add manual stmts for Sorafenib interactions 
+##May want to check these for complex vs inhibition
+#########################################################
 
 
-#Add statements for Sorafenib Targets
-drugTargetStmts = ac.load_statements('sorafenibTargetStmts.pkl')
-largeModelStmts = largeModelStmts + drugTargetStmts
-#largeModelStmts_contextChanges = largeModelStmts_contextChanges + drugTargetStmts
-smallModelStmts_contextChanges = smallModelStmts_contextChanges + drugTargetStmts
+##Add statements for Sorafenib Targets
+#drugTargetStmts = ac.load_statements('sorafenibTargetStmts.pkl')
+#largeModelStmts = largeModelStmts + drugTargetStmts
+##largeModelStmts_contextChanges = largeModelStmts_contextChanges + drugTargetStmts
+#smallModelStmts_contextChanges = smallModelStmts_contextChanges + drugTargetStmts
 
 
 
-#####################################################
-#Final processing/cleanup
-#Deduplication, removing inconsequential mods
 ######################################################
+##Final processing/cleanup
+##Deduplication, removing inconsequential mods
+#######################################################
 
-largeModelStmts = Preassembler.combine_duplicate_stmts(largeModelStmts)
-#largeModelStmts_contextChanges = Preassembler.combine_duplicate_stmts(largeModelStmts_contextChanges)
-#largeModelStmts_contextChanges = ac.filter_inconsequential_mods(largeModelStmts_contextChanges)
+#largeModelStmts = Preassembler.combine_duplicate_stmts(largeModelStmts)
+##largeModelStmts_contextChanges = Preassembler.combine_duplicate_stmts(largeModelStmts_contextChanges)
+##largeModelStmts_contextChanges = ac.filter_inconsequential_mods(largeModelStmts_contextChanges)
 
-smallModelStmts_contextChanges = Preassembler.combine_duplicate_stmts(smallModelStmts_contextChanges)
-smallModelStmts_contextChanges = ac.filter_inconsequential_mods(smallModelStmts_contextChanges)
+#smallModelStmts_contextChanges = Preassembler.combine_duplicate_stmts(smallModelStmts_contextChanges)
+#smallModelStmts_contextChanges = ac.filter_inconsequential_mods(smallModelStmts_contextChanges)
 
 
 
