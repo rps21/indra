@@ -69,8 +69,8 @@ def addSimParamters(method='ode',equil=True,equilSpecies=[],viz=True):
 
 from pysb import *
 from pysb.core import MonomerPattern
-#This is acting on direct issue, which we don't want
-#Tweak naming        
+from copy import deepcopy
+       
 def addObservables(pysbModel,bound=False):
     i=1
     newModel = deepcopy(pysbModel)
@@ -91,23 +91,6 @@ def addObservables(pysbModel,bound=False):
                     pass
 
     return newModel
-
-
-#srcMon = originalModel.monomers[2]
-#srcPhosSite = srcMon.sites[1]   #[0] is binding 
-#srcPhosState = srcMon.site_states[srcPhosSite][1] #[0] is unphos
-#srcPhosPattern = pysb.core.MonomerPattern(compartment=None,monomer=srcMon,site_conditions={srcPhosSite:srcPhosState})
-
-#srcBindSite = srcMon.sites[0]
-##srcBindState = srcMon.site_states[srcBindSite]  #doesn't exist
-#srcBindPattern = pysb.core.MonomerPattern(compartment=None,monomer=srcMon,site_conditions={srcBindSite:1})
-
-
-
-
-
-
-
 
 
 

@@ -1,15 +1,14 @@
 import pickle
 from indra.tools import assemble_corpus as ac
-from indra.mechlinker import MechLinker
-from indra.statements import *
 from indra.sources import trips
-from indra.preassembler import Preassembler
 from modelContext import enforceCascadeContext as cs
 from modelContext import combinePhosphorylationSites as ptm
 from modelContext import addImplicitMechs as aim
 from indra.assemblers import PysbAssembler
 import pysb
 from addBNGLParameters import addSimParamters
+from addBNGLParameters import addObservables
+
 
 #sentences = 'EGF binds EGFR. EGFR phosphorylates EGFR. EGFR binds EGFR.EGFR binds GRB2. GRB2 bounds SOS1, EGFR binds SOS1. SOS1 phosphorylates KRAS. KRAS phosphorylates BRAF. KDR binds VEGFC. KDR binds SRC. KDR phosphorylates SRC. SRC phosphorylates AKT1.'
 ##sentences = 'EGF binds EGFR. EGFR phosphorylates EGFR. EGFR binds EGFR. EGFR binds GRB2. KDR binds VEGFC. KDR binds SRC'
@@ -26,6 +25,7 @@ finalStmts3 = aim.addAll(finalStmts2)
 pa = PysbAssembler()
 pa.add_statements(testStmts)
 originalModel = pa.make_model()
+orignalModel = addObservables(originalModel,bound=True)
 
 bngl_model = pysb.export.export(originalModel,'bngl')
 with open('bnglModelTesting/originalModel.bngl','w') as bnglFile:
@@ -37,6 +37,7 @@ with open('bnglModelTesting/originalModel.bngl','w') as bnglFile:
 pa = PysbAssembler()
 pa.add_statements(finalStmts3)
 modifiedModel = pa.make_model()
+modifiedModel = addObservables(modifiedModel,bound=True)
 
 bngl_model = pysb.export.export(modifiedModel,'bngl')
 with open('bnglModelTesting/modifiedModel.bngl','w') as bnglFile:
