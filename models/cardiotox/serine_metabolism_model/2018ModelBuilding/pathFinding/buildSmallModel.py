@@ -46,4 +46,5 @@ with open('bnglModelTesting/modifiedModel.bngl','w') as bnglFile:
     actionsBlock = addSimParamters('ode',True,['EGF(erbb)'])
     bnglFile.write(actionsBlock)
 
-
+#model_genes = ['EGF','EGFR','GRB2','SOS1','KRAS','BRAF']
+#modelStmts = buildBaseModel(model_genes)
