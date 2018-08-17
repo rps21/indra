@@ -62,7 +62,7 @@ def addObservables(pysbModel,bound=False):
             #Bound observables are optionally available
             except KeyError:
                 if bound:
-                    pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:WILD})
+                    pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:ANY})
                     newModel.observables.add(Observable(name='%s_%s_bound'%(monomer.name,site),reaction_pattern=pattern))
                 else:
                     pass
