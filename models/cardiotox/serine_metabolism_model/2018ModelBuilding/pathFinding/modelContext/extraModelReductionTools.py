@@ -4,7 +4,8 @@ from indra.tools import assemble_corpus as ac
 
 def removeDimers(stmts_in):
     stmts_to_remove = []
-    for st in stmts_in:
+    complexStmts = ac.filter_by_type(stmts_in,Complex)
+    for st in complexStmts:
         if len(st.agent_list()) > 1:
             if st.agent_list()[0]: #Can have a None type in agent list, better workaround probably exists 
                 if st.agent_list()[0].entity_matches(st.agent_list()[1]):
