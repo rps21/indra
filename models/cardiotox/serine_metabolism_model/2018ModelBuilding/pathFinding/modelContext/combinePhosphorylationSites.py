@@ -112,8 +112,7 @@ def replace_ptms(stmts,name,dictionary):
                             newmodlist.append(newmod)
                     else:
                         if not any([mod1 for mod1 in newmodlist if mod.matches(mod1)]):
-                            newmodlist
-.append(mod)
+                            newmodlist.append(mod)
                 ag.mods = newmodlist 
         #change phosphorylated residues on a substrate 
         if isinstance(st,Modification):
