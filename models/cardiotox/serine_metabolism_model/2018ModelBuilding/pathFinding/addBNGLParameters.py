@@ -24,18 +24,18 @@ def addSimParamters(method='ode',equil=True,equilSpecies=[],viz=True):
             newText+='simulate({suffix=>"equil",method=>"ssa",t_end=>1e7,n_steps=>500})\n'
             for species in equilSpecies:
                 newText+= 'setConcentration("%s",1e4)\n' % species
-            newText+='simulate({method=>"ssa",t_start=>0,t_end=>36000,n_steps=>1000);\n'
+            newText+='simulate({method=>"ssa",t_start=>0,t_end=>36000,n_steps=>1000});\n'
        else:
             newText+='simulate({method=>"ssa",t_start=>0,t_end=>36000,n_steps=>1000});\n'
 
     elif method == "nf":
         if equil:
             for species in equilSpecies:
-                newText+= 'setConcentration("%s",0)\n' % species
-            newText+='simulate({suffix=>"equil",method=>"nf",t_end=>1e7,n_steps=>500})'
+                newText = 'setConcentration("%s",0)\n' % species
+            newText+='simulate({suffix=>"equil",method=>"nf",t_end=>1e7,n_steps=>500})\n'
             for species in equilSpecies:
                 newText+='setConcentration("%s",1e4)\n' % species
-            newText+='simulate({method=>"nf",t_start=>0,t_end=>36000,n_steps=>1000);\n'
+            newText+='simulate({method=>"nf",t_start=>0,t_end=>36000,n_steps=>1000});\n'
         else:
             newText = 'simulate{method=>"nf",t_start=>0,t_end=>36000,n_steps=>1000});\n'
 
