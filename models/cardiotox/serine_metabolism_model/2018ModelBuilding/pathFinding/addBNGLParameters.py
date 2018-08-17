@@ -9,10 +9,10 @@ def addSimParamters(method='ode',equil=True,equilSpecies=[],viz=True):
         if equil:
             for species in equilSpecies:
                 newText+= 'setConcentration("%s",0)\n' % species
-            newText+='simulate({method=>"ode",t_end=>1e7,n_steps=>500,atol=>1e-8,rtol=>1e-8})\n'
+            newText+='simulate({suffix=>"equil",method=>"ode",t_end=>1e7,n_steps=>500,atol=>1e-8,rtol=>1e-8})\n'
             for species in equilSpecies:
                 newText+= 'setConcentration("%s",1e4)\n' % species
-            newText+='simulate({suffix=>"equil",method=>"ode",t_start=>0,t_end=>36000,n_steps=>1000,atol=>1e-8,rtol=>1e-8});\n'
+            newText+='simulate({method=>"ode",t_start=>0,t_end=>36000,n_steps=>1000,atol=>1e-8,rtol=>1e-8});\n'
         else:
             newText = 'simulate({method=>"ode",t_start=>0,t_end=>36000,n_steps=>1000,atol=>1e-8,rtol=>1e-8});\n'
 
