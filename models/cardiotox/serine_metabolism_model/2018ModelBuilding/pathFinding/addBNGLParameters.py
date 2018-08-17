@@ -71,7 +71,7 @@ from pysb import *
 from pysb.core import MonomerPattern
 #This is acting on direct issue, which we don't want
 #Tweak naming        
-def addObservables(pysbModel):
+def addObservables(pysbModel,bound=False):
     i=1
     newModel = deepcopy(pysbModel)
     for monomer in newModel.monomers:
@@ -80,12 +80,15 @@ def addObservables(pysbModel):
                 i+=1
                 monomer.site_states[site]  #means a site has a flippable state 
                 pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:monomer.site_states[site][1]})   #Should see if [1] is always the perturbed/activated state
-                newModel.observables.add(Observable(name='%s_%s'%(monomer.name,site),reaction_pattern=pattern))
+                newModel.observables.add(Observable(name='%s_%s_phos'%(monomer.name,site),reaction_pattern=pattern))
 
-            #Need to decide if want to include binding and/or make optional 
+            #Bound observables are optionally available
             except KeyError:
-                pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:WILD})
-                newModel.observables.add(Observable(name='%s_%s'%(monomer.name,site),reaction_pattern=pattern))
+                if bound:
+                    pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:WILD})
+                    newModel.observables.add(Observable(name='%s_%s_bound'%(monomer.name,site),reaction_pattern=pattern))
+                else:
+                    pass
 
     return newModel
 
@@ -98,8 +101,6 @@ def addObservables(pysbModel):
 #srcBindSite = srcMon.sites[0]
 ##srcBindState = srcMon.site_states[srcBindSite]  #doesn't exist
 #srcBindPattern = pysb.core.MonomerPattern(compartment=None,monomer=srcMon,site_conditions={srcBindSite:1})
-
-
 
 
 
