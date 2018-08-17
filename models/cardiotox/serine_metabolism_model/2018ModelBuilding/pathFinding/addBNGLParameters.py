@@ -1,5 +1,8 @@
-def addSimParamters(method='ode',equil=True,equilSpecies=[],viz=True):
+from pysb import *
+from pysb.core import MonomerPattern
+from copy import deepcopy
 
+def addSimParamters(method='ode',equil=True,equilSpecies=[],viz=True):
     if method == "ode":
         newText = """generate_network({overwrite=>1})
         writeMexfile()\n"""
@@ -44,32 +47,6 @@ def addSimParamters(method='ode',equil=True,equilSpecies=[],viz=True):
         visualize({type=>"regulatory",groups=>1,collapse=>1})\n"""
 
     return newText
-
-
-#Issue will be defining species for equilibration, observables.
-#Can pass as a string, but not ideal for 
-#Could write a function to parse seed speices based on species name 
-
-#In [24]: species_codes = [pysb.generator.bng.format_complexpattern(cp) for cp, param in originalModel.initial_conditions]
-
-#In [25]: species_codes
-#Out[25]: 
-#['GRB2(erbb)',
-# 'SOS1(erbb)',
-
-#species codes - should be useful for grabbing species for setConcentration
-
-
-
-#Want as observables:
-#SRC(vegfr?~p)   SRC(phospho='p')
-#Maybe 
-#GRB2(erbb!+)    GRB2(erbb=1)
-#SOS1(erbb!+)    SOS1(erbb=1)
-
-from pysb import *
-from pysb.core import MonomerPattern
-from copy import deepcopy
        
 def addObservables(pysbModel,bound=False):
     i=1
