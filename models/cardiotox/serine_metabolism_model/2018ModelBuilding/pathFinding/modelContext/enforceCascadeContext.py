@@ -251,7 +251,8 @@ def add_all_af(stmts):
 
     recLigStmts = reduce_complex_activeforms(recLigStmts)
     tmpStmts = reduce_complex_activeforms(tmpStmts)
-    stmts1 = run_mechlinker_step_reduced(recLigStmts)
+    #stmts1 = run_mechlinker_step_reduced(recLigStmts)
+    stmts1 = recLigStmts
     stmts2 = run_mechlinker_step_reduced(tmpStmts)
 
     outputStmts = stmts1 + stmts2
