@@ -67,23 +67,27 @@ def addSimParamters(method='ode',equil=True,equilSpecies=[],viz=True):
 #GRB2(erbb!+)    GRB2(erbb=1)
 #SOS1(erbb!+)    SOS1(erbb=1)
 
+from pysb import *
 from pysb.core import MonomerPattern
-        
+#This is acting on direct issue, which we don't want
+#Tweak naming        
 def addObservables(pysbModel):
     i=1
-    for monomer in pysbModel.monomers:
+    newModel = deepcopy(pysbModel)
+    for monomer in newModel.monomers:
         for site in monomer.sites: 
             try:
+                i+=1
                 monomer.site_states[site]  #means a site has a flippable state 
                 pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:monomer.site_states[site][1]})   #Should see if [1] is always the perturbed/activated state
-                pysbModel.observables.add(Observable(name='blah%s'%i,reaction_pattern=pattern))
-                i=1+i
+                newModel.observables.add(Observable(name='%s_%s'%(monomer.name,site),reaction_pattern=pattern))
+
             #Need to decide if want to include binding and/or make optional 
             except KeyError:
                 pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:WILD})
-                pysbModel.observables.add(Observable(name='blah%s'%i,reaction_pattern=pattern))
-                i=1+i
-    return pysbModel
+                newModel.observables.add(Observable(name='%s_%s'%(monomer.name,site),reaction_pattern=pattern))
+
+    return newModel
 
 
 #srcMon = originalModel.monomers[2]
