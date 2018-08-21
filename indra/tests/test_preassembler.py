@@ -551,7 +551,7 @@ def test_multiprocessing():
     # and one locally
     toplevel = pa.combine_related(return_toplevel=True, poolsize=1,
                                   size_cutoff=2)
-    assert len(toplevel) == 3
+    assert len(toplevel) == 3, 'Got %d toplevel statements.' % len(toplevel)
 
 def test_conversion_refinement():
     ras = Agent('RAS', db_refs={'FPLX': 'RAS'})
@@ -570,8 +570,8 @@ def test_conversion_refinement():
 def test_influence_duplicate():
     gov = 'UN/entities/human/government/government_entity'
     agr = 'UN/entities/natural/crop_technology'
-    cgov = Concept('government', db_refs={'EIDOS': [(gov, 1.0)]})
-    cagr = Concept('agriculture', db_refs={'EIDOS': [(agr, 1.0)]})
+    cgov = Concept('government', db_refs={'UN': [(gov, 1.0)]})
+    cagr = Concept('agriculture', db_refs={'UN': [(agr, 1.0)]})
     stmt1 = Influence(cgov, cagr, evidence=[Evidence(source_api='eidos1')])
     stmt2 = Influence(cagr, cgov, evidence=[Evidence(source_api='eidos2')])
     stmt3 = Influence(cgov, cagr, evidence=[Evidence(source_api='eidos3')])
@@ -593,9 +593,9 @@ def test_influence_refinement():
     truck = 'UN/entities/human/infrastructure/transportation/' + \
         'transportation_methods'
     agr = 'UN/entities/human/livelihood'
-    ctran = Concept('transportation', db_refs={'EIDOS': [(tran, 1.0)]})
-    ctruck = Concept('trucking', db_refs={'EIDOS': [(truck, 1.0)]})
-    cagr = Concept('agriculture', db_refs={'EIDOS': [(agr, 1.0)]})
+    ctran = Concept('transportation', db_refs={'UN': [(tran, 1.0)]})
+    ctruck = Concept('trucking', db_refs={'UN': [(truck, 1.0)]})
+    cagr = Concept('agriculture', db_refs={'UN': [(agr, 1.0)]})
     stmt1 = Influence(ctran, cagr, evidence=[Evidence(source_api='eidos1')])
     stmt2 = Influence(ctruck, cagr, evidence=[Evidence(source_api='eidos2')])
     stmt3 = Influence(cagr, ctran, evidence=[Evidence(source_api='eidos3')])

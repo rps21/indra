@@ -320,6 +320,11 @@ def get_agent_rule_str(agent):
                     rule_str_list.append('n' + _n(b.agent.name))
         if agent.location is not None:
             rule_str_list.append(_n(agent.location))
+        if agent.activity is not None:
+            if agent.activity.is_active:
+                rule_str_list.append(agent.activity.activity_type[:3])
+            else:
+                rule_str_list.append(agent.activity.activity_type[:3] + '_inact')
     rule_str = '_'.join(rule_str_list)
     return rule_str
 
@@ -334,7 +339,7 @@ def add_rule_to_model(model, rule, annotations=None):
     # If this rule is already in the model, issue a warning and continue
     except ComponentDuplicateNameError:
         msg = "Rule %s already in model! Skipping." % rule.name
-        logger.warning(msg)
+        logger.debug(msg)
 
 
 def get_create_parameter(model, name, value, unique=True):
@@ -512,7 +517,12 @@ def get_monomer_pattern(model, agent, extra_fields=None):
     pattern = get_site_pattern(agent)
     if extra_fields is not None:
         for k, v in extra_fields.items():
-            pattern[k] = v
+            # This is an important assumption, it only sets the given pattern
+            # on the monomer if that site/key is not already specified at the
+            # Agent level. For instance, if the Agent is specified to have
+            # 'activity', that site will not be updated here.
+            if k not in pattern:
+                pattern[k] = v
     # If a model is given, return the Monomer with the generated pattern,
     # otherwise just return the pattern
     try:
@@ -655,7 +665,7 @@ def parse_identifiers_url(url):
         if not len(g) == 2:
             return (None, None)
         ns_map = {'hgnc': 'HGNC', 'uniprot': 'UP', 'chebi':'CHEBI',
-                  'interpro':'IP', 'pfam':'XFAM'}
+                  'interpro':'IP', 'pfam':'XFAM', 'fplx': 'FPLX'}
         ns = g[0]
         id = g[1]
         if not ns in ns_map.keys():
@@ -730,7 +740,7 @@ class PysbAssembler(object):
         self.statements += stmts
 
     def make_model(self, policies=None, initial_conditions=True,
-                   reverse_effects=False):
+                   reverse_effects=False, model_name='indra_model'):
         """Assemble the PySB model from the collected INDRA Statements.
 
         This method assembles a PySB model from the set of INDRA Statements.
@@ -747,7 +757,14 @@ class PysbAssembler(object):
             different policies.
         initial_conditions : Optional[bool]
             If True, default initial conditions are generated for the
-            Monomers in the model.
+            Monomers in the model. Default: True
+        reverse_effects : Optional[bool]
+            If True, reverse rules are added to the model for activity,
+            modification and amount regulations that have no corresponding
+            reverse effects. Default: False
+        model_name : Optional[str]
+            The name attribute assigned to the PySB Model object.
+            Default: "indra_model"
 
         Returns
         -------
@@ -770,6 +787,7 @@ class PysbAssembler(object):
                 local_policies.update(policies)
             self.policies = local_policies
         self.model = Model()
+        self.model.name = model_name
         self.agent_set = _BaseAgentSet()
         # Collect information about the monomers/self.agent_set from the
         # statements
@@ -2297,7 +2315,7 @@ def increaseamount_assemble_interactions_only(stmt, model, agent_set):
     obj = model.monomers[obj_base_agent.name]
     rule_subj_str = get_agent_rule_str(stmt.subj)
     rule_obj_str = get_agent_rule_str(stmt.obj)
-    rule_name = '%s_synthesizes_%s' % (rule_subj_str, rule_obj_str)
+    rule_name = '%s_produces_%s' % (rule_subj_str, rule_obj_str)
 
     subj_site_name = get_binding_site_name(stmt.obj)
     obj_site_name = get_binding_site_name(stmt.subj)
@@ -2314,7 +2332,8 @@ def increaseamount_assemble_interactions_only(stmt, model, agent_set):
 
 def increaseamount_assemble_one_step(stmt, model, agent_set, rate_law=None):
     if stmt.subj is not None and (stmt.subj.name == stmt.obj.name):
-        logger.warning('%s transcribes itself, skipping' % stmt.obj.name)
+        if not isinstance(stmt, ist.Influence):
+            logger.warning('%s transcribes itself, skipping' % stmt.obj.name)
         return
     # We get the monomer pattern just to get a valid monomer
     # otherwise the patter will be replaced
@@ -2340,7 +2359,7 @@ def increaseamount_assemble_one_step(stmt, model, agent_set, rate_law=None):
     else:
         subj_pattern = get_monomer_pattern(model, stmt.subj)
         rule_subj_str = get_agent_rule_str(stmt.subj)
-        rule_name = '%s_synthesizes_%s' % (rule_subj_str, rule_obj_str)
+        rule_name = '%s_produces_%s' % (rule_subj_str, rule_obj_str)
         if rule_name in [r.name for r in model.rules]:
             return
         if not rate_law:
@@ -2392,6 +2411,12 @@ def influence_assemble_one_step(stmt, *args):
         return increaseamount_assemble_one_step(stmt, *args)
 influence_monomers_default = influence_monomers_one_step
 influence_assemble_default = influence_assemble_one_step
+influence_monomers_hill = influence_monomers_one_step
+def influence_assemble_hill(stmt, *args):
+    if stmt.overall_polarity() == -1:
+        return decreaseamount_assemble_one_step(stmt, *args)
+    else:
+        return increaseamount_assemble_hill(stmt, *args)
 
 
 # CONVERSION ###################################################
@@ -2495,7 +2520,7 @@ class PysbPreassembler(object):
                 base_agent.add_activity_form(agent_to_add, stmt.is_active)
 
     def replace_activities(self):
-        logger.info('Running PySB Preassembler replace activities')
+        logger.debug('Running PySB Preassembler replace activities')
         # TODO: handle activity hierarchies
         new_stmts = []
         def has_agent_activity(stmt):
@@ -2577,6 +2602,11 @@ class PysbPreassembler(object):
                     neg_mod_sites[agent].append((stmt.residue, stmt.position))
                 except KeyError:
                     neg_mod_sites[agent] = [(stmt.residue, stmt.position)]
+            elif isinstance(stmt, ist.Influence):
+                if stmt.overall_polarity() == 1:
+                    syntheses.append(stmt.obj.name)
+                elif stmt.overall_polarity() == -1:
+                    degradations.append(stmt.obj.name)
             elif isinstance(stmt, ist.IncreaseAmount):
                 syntheses.append(stmt.obj.name)
             elif isinstance(stmt, ist.DecreaseAmount):
@@ -2669,21 +2699,29 @@ def export_sbgn(model):
         # Add glyph for reaction
         process_glyph = sa._process_glyph('process')
         # Connect reactants with arcs
-        for r in reactants:
-            glyph = glyphs.get(r)
-            if glyph is None:
-                glyph_id = sa._none_glyph()
-            else:
-                glyph_id = glyph.attrib['id']
+        if not reactants:
+            glyph_id = sa._none_glyph()
             sa._arc('consumption', glyph_id, process_glyph)
+        else:
+            for r in reactants:
+                glyph = glyphs.get(r)
+                if glyph is None:
+                    glyph_id = sa._none_glyph()
+                else:
+                    glyph_id = glyph.attrib['id']
+                sa._arc('consumption', glyph_id, process_glyph)
         # Connect products with arcs
-        for p in products:
-            glyph = glyphs.get(p)
-            if glyph is None:
-                glyph_id = sa._none_glyph()
-            else:
-                glyph_id = glyph.attrib['id']
+        if not products:
+            glyph_id = sa._none_glyph()
             sa._arc('production', process_glyph, glyph_id)
+        else:
+            for p in products:
+                glyph = glyphs.get(p)
+                if glyph is None:
+                    glyph_id = sa._none_glyph()
+                else:
+                    glyph_id = glyph.attrib['id']
+                sa._arc('production', process_glyph, glyph_id)
         # Connect controllers with arcs
         for c in controllers:
             glyph = glyphs[c]

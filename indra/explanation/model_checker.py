@@ -16,9 +16,15 @@ from pysb.core import as_complex_pattern, ComponentDuplicateNameError
 from indra.statements import *
 from indra.assemblers import pysb_assembler as pa
 from indra.tools.expand_families import _agent_from_uri
-import paths_graph as pg
 from collections import Counter
 from indra.util.kappa_util import im_json_to_graph
+
+try:
+    import paths_graph as pg
+    has_pg = True
+except ImportError:
+    has_pg = False
+
 
 logger = logging.getLogger('model_checker')
 
@@ -362,7 +368,12 @@ class ModelChecker(object):
         """Check a RegulateAmount statement."""
         logger.info('Checking stmt: %s' % stmt)
         subj_mp = pa.get_monomer_pattern(self.model, stmt.subj)
-        target_polarity = 1 if isinstance(stmt, IncreaseAmount) else -1
+        if isinstance(stmt, Influence):
+            target_polarity = stmt.overall_polarity()
+            if target_polarity is None:
+                target_polarity = 1
+        else:
+            target_polarity = 1 if isinstance(stmt, IncreaseAmount) else -1
         obs_names = self.stmt_to_obs[stmt]
         for obs_name in obs_names:
             return self._find_im_paths(subj_mp, obs_name, target_polarity,
@@ -572,6 +583,8 @@ class ModelChecker(object):
 
         # -- Route to the path sampling function --
         if self.do_sampling:
+            if not has_pg:
+                raise Exception('The paths_graph package could not be imported.')
             return self._sample_paths(input_rule_set, obs_name, target_polarity,
                                max_paths, max_path_length)
 
@@ -760,6 +773,32 @@ class ModelChecker(object):
         # Now remove all the edges to be removed with a single call
         im.remove_edges_from(edges_to_remove)
 
+    def prune_influence_map_subj_obj(self):
+        """Prune influence map to include only edges where the object of the
+        upstream rule matches the subject of the downstream rule."""
+        def get_rule_info(r):
+            result = {}
+            for ann in self.model.annotations:
+                if ann.subject == r:
+                    if ann.predicate == 'rule_has_subject':
+                        result['subject'] = ann.object
+                    elif ann.predicate == 'rule_has_object':
+                        result['object'] = ann.object
+            return result
+        im = self.get_im()
+        rules = im.nodes()
+        edges_to_prune = []
+        for r1, r2 in itertools.permutations(rules, 2):
+            if (r1, r2) not in im.edges():
+                continue
+            r1_info = get_rule_info(r1)
+            r2_info = get_rule_info(r2)
+            if 'object' not in r1_info or 'subject' not in r2_info:
+                continue
+            if r1_info['object'] != r2_info['subject']:
+                logger.info("Removing edge %s --> %s" % (r1, r2))
+                edges_to_prune.append((r1, r2))
+        im.remove_edges_from(edges_to_prune)
 
 def _find_sources_sample(im, target, sources, polarity, rule_obs_dict,
                          agent_to_obs, agents_values):
@@ -1201,4 +1240,29 @@ def _im_to_signed_digraph(im):
     dg = nx.DiGraph()
     dg.add_edges_from(edges)
     return dg
+
+
+def stmts_for_path(path, model, stmts):
+    path_stmts = []
+    for path_rule, sign in path:
+        for rule in model.rules:
+            if rule.name == path_rule:
+                stmt = _stmt_from_rule(model, path_rule, stmts)
+                path_stmts.append(stmt)
+    return path_stmts
+
+
+def _stmt_from_rule(model, rule_name, stmts):
+    """Return the INDRA Statement corresponding to a given rule by name."""
+    stmt_uuid = None
+    for ann in model.annotations:
+        if ann.predicate == 'from_indra_statement':
+            if ann.subject == rule_name:
+                stmt_uuid = ann.object
+                break
+    if stmt_uuid:
+        for stmt in stmts:
+            if stmt.uuid == stmt_uuid:
+                return stmt
+
 

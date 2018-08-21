@@ -153,6 +153,7 @@ Some validation tools include:
 from __future__ import absolute_import, print_function, unicode_literals
 from builtins import dict, str
 from future.utils import python_2_unicode_compatible
+
 import os
 import abc
 import sys
@@ -160,8 +161,10 @@ import uuid
 import rdflib
 import logging
 import itertools
+from hashlib import md5
 from copy import deepcopy
 from collections import OrderedDict as _o
+
 from indra.util import unicode_strs
 import indra.databases.hgnc_client as hgc
 import indra.databases.uniprot_client as upc
@@ -564,9 +567,10 @@ class Concept(object):
         # Prioritize anything that is other than TEXT
         db_names = sorted(list(set(self.db_refs.keys()) - set(['TEXT'])))
         db_ns = db_names[0] if db_names else None
+        # Prefer UN if it's there
+        if 'UN' in db_names:
+            db_ns = 'UN'
         db_id = self.db_refs[db_ns] if db_ns else None
-        if db_ns == 'BBN' and db_id in ('Factor', 'Entities/Factor'):
-            return (None, None)
         # If the db_id is actually a list of scored groundings, we take the
         # highest scoring one.
         if isinstance(db_id, list):
@@ -590,6 +594,18 @@ class Concept(object):
             return False
         # Check for isa relationship
         return hierarchies['entity'].isa(self_ns, self_id, other_ns, other_id)
+
+    def is_opposite(self, other, hierarchies):
+        # Get the namespaces for the comparison
+        (self_ns, self_id) = self.get_grounding()
+        (other_ns, other_id) = other.get_grounding()
+        # If one of the agents isn't grounded to a relevant namespace,
+        # there can't be an is_opposite relationship
+        if not all((self_ns, self_id, other_ns, other_id)):
+            return False
+        # Check for is_opposite relationship
+        return hierarchies['entity'].is_opposite(self_ns, self_id,
+                                                 other_ns, other_id)
 
     def refinement_of(self, other, hierarchies):
         # Make sure the Agent types match
@@ -992,9 +1008,14 @@ class Evidence(object):
             self.epistemics = {}
 
     def matches_key(self):
-        key = str((self.source_api, self.source_id, self.pmid,
-                  self.text, self.annotations, self.epistemics))
-        return key
+        key_lst = [self.source_api, self.source_id, self.pmid,
+                   self.text]
+        for d in [self.annotations, self.epistemics]:
+            d_key = list(d.items())
+            d_key.sort()
+            key_lst.append(d_key)
+        key = str(key_lst)
+        return key.replace('"', '').replace('\'', '').replace('None', '~')[1:-1]
 
     def equals(self, other):
         matches = (self.source_api == other.source_api) and\
@@ -1035,9 +1056,10 @@ class Evidence(object):
         return ev
 
     def __str__(self):
-        ev_str = 'Evidence(%s, %s, %s, %s)' % \
-                 (self.source_api, self.pmid, self.annotations,
-                  self.text)
+        ev_str = 'Evidence(source_api=\'%s\',\n' % self.source_api
+        ev_str += '         pmid=\'%s\',\n' % self.pmid
+        ev_str += '         text=\'%s\',\n' % self.text
+        ev_str += '         annotations=%s)' % self.annotations
         return ev_str
 
     def __repr__(self):
@@ -1052,7 +1074,7 @@ class Statement(object):
 
     Parameters
     ----------
-    evidence : list of :py:class:`Evidence`
+    evidence : None or :py:class:`Evidence` or list of :py:class:`Evidence`
         If a list of Evidence objects is passed to the constructor, the
         value is set to this list. If a bare Evidence object is passed,
         it is enclosed in a list. If no evidence is passed (the default),
@@ -1078,9 +1100,69 @@ class Statement(object):
         self.supported_by = supported_by if supported_by else []
         self.belief = 1
         self.uuid = '%s' % uuid.uuid4()
+        self._full_hash = None
+        self._shallow_hash = None
+        return
+
+    def _make_hash(self, matches_key, n_bytes):
+        """Make the has from a matches key."""
+        raw_h = int(md5(matches_key.encode('utf-8')).hexdigest()[:n_bytes], 16)
+        # Make it a signed int.
+        return 16**n_bytes//2 - raw_h
+
+    def matches_key(self):
+        raise NotImplementedError("Method must be implemented in child class.")
 
     def matches(self, other):
         return self.matches_key() == other.matches_key()
+
+    def get_hash(self, shallow=False, refresh=False):
+        """Get a hash for this Statement.
+
+        There are two types of hash, "shallow" and "full". A shallow hash is
+        as unique as the information carried by the statement, i.e. it is a hash
+        of the `matches_key`. This means that differences in source, evidence,
+        and so on are not included. As such, it is a shorter hash (14 nibbles).
+        The odds of a collision among all the statements we expect to encounter
+        (well under 10^8) is ~10^-9 (1 in a billion). Checks for collisions can
+        be done by using the matches keys.
+
+        A full hash includes, in addition to the matches key, information from
+        the evidence of the statement. These hashes will be equal if the two
+        Statements came from the same sentences, extracted by the same reader,
+        from the same source. These hashes are correspondingly longer (16
+        nibbles). The odds of a collision for an expected less than 10^10
+        extractions is ~10^-9 (1 in a billion).
+
+        Note that a hash of the Python object will also include the `uuid`, so
+        it will always be unique for every object.
+
+        Parameters
+        ----------
+        shallow : bool
+            Choose between the shallow and full hashes described above. Default
+            is false (e.g. a deep hash).
+        refresh : bool
+            Used to get a new copy of the hash. Default is false, so the hash,
+            if it has been already created, will be read from the attribute.
+            This is primarily used for speed testing.
+
+        Returns
+        -------
+        hash : int
+            A long integer hash.
+        """
+        if shallow:
+            if self._shallow_hash is None or refresh:
+                self._shallow_hash = self._make_hash(self.matches_key(), 14)
+            ret = self._shallow_hash
+        else:
+            if self._full_hash is None or refresh:
+                ev_mk_list = sorted([ev.matches_key() for ev in self.evidence])
+                self._full_hash =\
+                    self._make_hash(self.matches_key() + str(ev_mk_list), 16)
+            ret = self._full_hash
+        return ret
 
     def agent_list_with_bound_condition_agents(self):
         # Returns the list of agents both directly participating in the
@@ -1230,7 +1312,7 @@ class Statement(object):
                 if isinstance(element, basestring) and \
                    element.startswith('http'):
                     element = element.split('/')[-1]
-                graph.add_node(node_id, label=('%s' % element))
+                graph.add_node(node_id, label=('%s' % str(element)))
             return node_id
         jd = self.to_json()
         graph = networkx.DiGraph()
@@ -1255,7 +1337,13 @@ class Statement(object):
         for attr in ['evidence', 'belief', 'uuid', 'supports', 'supported_by',
                      'is_activation']:
             kwargs.pop(attr, None)
-        return self.__class__(**kwargs)
+        for attr in ['_full_hash', '_shallow_hash']:
+            my_hash = kwargs.pop(attr, None)
+            my_shallow_hash = kwargs.pop(attr, None)
+        new_instance = self.__class__(**kwargs)
+        new_instance._full_hash = my_hash
+        new_instance._shallow_hash = my_shallow_hash
+        return new_instance
 
 
 @python_2_unicode_compatible
@@ -2692,12 +2780,22 @@ class Influence(IncreaseAmount):
         return str(key)
 
     def contradicts(self, other, hierarchies):
+        # First case is if they are "consistent" and related
         if self.entities_match(other) or \
             self.refinement_of(other, hierarchies) or \
             other.refinement_of(self, hierarchies):
             sp = self.overall_polarity()
             op = other.overall_polarity()
             if sp and op and sp * op == -1:
+                return True
+        # Second case is if they are "opposites" and related
+        if (self.subj.entity_matches(other.subj) and \
+            self.obj.is_opposite(other.obj, hierarchies)) or \
+           (self.obj.entity_matches(other.obj) and \
+            self.subj.is_opposite(other.subj, hierarchies)):
+            sp = self.overall_polarity()
+            op = other.overall_polarity()
+            if sp and op and sp * op == 1:
                 return True
         return False
 
@@ -2782,11 +2880,11 @@ class Conversion(Statement):
         The list of molecular species being consumed by the conversion.
     obj_to : list of :py:class:`indra.statement.Agent`
         The list of molecular species being created by the conversion.
-    evidence : list of :py:class:`Evidence`
+    evidence : None or :py:class:`Evidence` or list of :py:class:`Evidence`
         Evidence objects in support of the synthesis statement.
     """
     def __init__(self, subj, obj_from=None, obj_to=None, evidence=None):
-        super(Conversion, self).__init__(evidence)
+        super(Conversion, self).__init__(evidence=evidence)
         self.subj = subj
         self.obj_from = obj_from if obj_from is not None else []
         if isinstance(obj_from, Agent):
@@ -2909,12 +3007,23 @@ class Unresolved(Statement):
     representation of an indra statement. When this happens, this class is used
     as a place-holder, carrying only the uuid of the statement.
     """
-    def __init__(self, uuid_str):
+    def __init__(self, uuid_str=None, shallow_hash=None, full_hash=None):
         super(Unresolved, self).__init__()
         self.uuid = uuid_str
+        self._shallow_hash = shallow_hash
+        self._full_hash = full_hash
+        assert self.uuid or self._shallow_hash or self._full_hash,\
+            "Some identifying information must be given."
 
     def __str__(self):
-        return "%s(%s)" % (type(self).__name__, self.uuid)
+        if self.uuid:
+            return "%s(uuid=%s)" % (type(self).__name__, self.uuid)
+        elif self._shallow_hash:
+            return "%s(shallow_hash=%s)" % (type(self).__name__,
+                                            self._shallow_hash)
+        else:
+            return "%s(full_hash=%s)" % (type(self).__name__,
+                                         self._full_hash)
 
 
 def _promote_support(sup_list, uuid_dict, on_missing='handle'):
@@ -3234,6 +3343,40 @@ def get_all_descendants(parent):
     for child in children:
         descendants += get_all_descendants(child)
     return descendants
+
+
+# In the future, when hierarchy is no longer determined by sub-classing, this
+# function should be altered to account for the change.
+def get_type_hierarchy(s):
+    """Get the sequence of parents from `s` to Statement.
+
+    Parameters
+    ----------
+    s : a class or instance of a child of Statement
+        For example the statement `Phosphorylation(MEK(), ERK())` or just the
+        class `Phosphorylation`.
+
+    Returns
+    -------
+    parent_list : list[types]
+        A list of the types leading up to Statement.
+
+    Examples
+    --------
+        >> s = Phosphorylation(MAPK1(), Elk1())
+        >> get_type_hierarchy(s)
+        [Phosphorylation, AddModification, Modification, Statement]
+        >> get_type_hierarchy(AddModification)
+        [AddModification, Modification, Statement]
+    """
+    tp = type(s) if not isinstance(s, type) else s
+    p_list = [tp]
+    for p in tp.__bases__:
+        if p is not Statement:
+            p_list.extend(get_type_hierarchy(p))
+        else:
+            p_list.append(p)
+    return p_list
 
 
 class NotAStatementName(Exception):

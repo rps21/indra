@@ -23,13 +23,23 @@ if __name__ == '__main__':
          'and should thus be used with care.')
         )
     parser.add_argument(
-        '-m', '--mode',
-        choices=['all', 'unread-all', 'unread-unread', 'none'],
+        '-m', '--reading_mode',
+        choices=['all', 'unread', 'none'],
         default='unread',
-        help=('Set the reading mode. If \'all\', read everything, if '
-              '\'unread\', only read content that does not have pre-existing '
-              'readings of the same reader and version, if \'none\', only '
-              'use pre-existing readings. Default is \'unread\'.')
+        help=("Set the reading mode. If 'all', read everything, if "
+              "'unread', only read content that does not have pre-existing "
+              "readings of the same reader and version, if 'none', only "
+              "use pre-existing readings. Default is 'unread'.")
+        )
+    parser.add_argument(
+        '-s', '--stmt_mode',
+        choices=['all', 'unread', 'none'],
+        default='all',
+        help=("Choose which readings should produce statements. If 'all', all "
+              "readings that are produced or retrieved will be used to produce "
+              "statements. If 'unread', only produce statements from "
+              "previously unread content. If 'none', do not produce any "
+              "statements (only readings will be produced).")
         )
     parser.add_argument(
         '-t', '--temp',
@@ -138,9 +148,9 @@ def _enrich_reading_data(reading_data_iter, db=None):
     if db is None:
         db = get_primary_db()
     possible_matches = db.select_all(
-        'readings',
-        db.Readings.text_content_id.in_([rd.tcid for rd in reading_data_iter
-                                         if rd.reading_id is None])
+        'reading',
+        db.Reading.text_content_id.in_([rd.tcid for rd in reading_data_iter
+                                        if rd.reading_id is None])
         )
     for rdata in reading_data_iter:
         for reading in possible_matches:
@@ -232,7 +242,7 @@ def get_clauses(id_dict, db):
         `db.filter_query(<table>, <other clauses>, *clause_list)`.
         If the id_dict has no ids, an effectively empty condition is returned.
     """
-    # Handle all id types besides text ref ids (trid) and text content ids (tcid).
+    # Handle all id types but text ref ids (trid) and text content ids (tcid).
     id_condition_list = [getattr(db.TextRef, id_type).in_(id_list)
                          for id_type, id_list in id_dict.items()
                          if len(id_list) and id_type not in ['tcid', 'trid']]
@@ -323,7 +333,7 @@ def get_content_query(ids, readers, db=None, force_fulltext=False,
     # These allow conditions on different tables to equal conditions on the
     # dependent tables.
     tc_tr_binding = db.TextContent.text_ref_id == db.TextRef.id
-    rd_tc_binding = db.Readings.text_content_id == db.TextContent.id
+    rd_tc_binding = db.Reading.text_content_id == db.TextContent.id
 
     # Begin the list of clauses with the binding between text content and
     # text refs.
@@ -407,7 +417,7 @@ def get_readings_query(ids, readers, db=None, force_fulltext=False):
         db = get_primary_db()
     clauses = [
         # Bind conditions on readings to conditions on content.
-        db.Readings.text_content_id == db.TextContent.id,
+        db.Reading.text_content_id == db.TextContent.id,
 
         # Bind text content to text refs
         db.TextContent.text_ref_id == db.TextRef.id,
@@ -427,10 +437,10 @@ def get_readings_query(ids, readers, db=None, force_fulltext=False):
                 clauses.append(*sub_clauses)
 
         readings_query = db.filter_query(
-            db.Readings,
+            db.Reading,
 
             # Bind conditions on readings to conditions on content.
-            db.Readings.text_content_id == db.TextContent.id,
+            db.Reading.text_content_id == db.TextContent.id,
 
             # Bind text content to text refs
             db.TextContent.text_ref_id == db.TextRef.id,
@@ -537,8 +547,8 @@ def make_db_readings(id_dict, readers, batch_size=1000, force_fulltext=False,
                     else:
                         # Try to get a previous reading from this reader.
                         reading = db.select_one(
-                            db.Readings,
-                            db.Readings.text_content_id == text_content.id,
+                            db.Reading,
+                            db.Reading.text_content_id == text_content.id,
                             r.matches_clause(db)
                             )
                         if reading is not None:
@@ -597,8 +607,8 @@ def upload_readings(output_list, db=None):
 
     # Create the list of records to be copied, ensuring no uniqueness conflicts
     r_list = db.select_all(
-        db.Readings,
-        db.Readings.text_content_id.in_([rd.tcid for rd in output_list])
+        db.Reading,
+        db.Reading.text_content_id.in_([rd.tcid for rd in output_list])
         )
     exisiting_tcid_set = set([r.text_content_id for r in r_list])
     upload_list = []
@@ -618,12 +628,12 @@ def upload_readings(output_list, db=None):
     # Copy into the database.
     logger.info("Adding %d/%d reading entries to the database." %
                 (len(upload_list), len(output_list)))
-    db.copy('readings', upload_list, ReadingData.get_cols())
+    db.copy('reading', upload_list, ReadingData.get_cols())
     return
 
 
-def produce_readings(id_dict, reader_list, verbose=False,
-                     read_mode='unread-all', force_fulltext=False,
+def produce_readings(id_dict, reader_list, verbose=False, read_mode='unread',
+                     get_preexisting=True, force_fulltext=False,
                      batch_size=1000, no_upload=False, pickle_file=None,
                      db=None, log_readers=True, prioritize=False):
     """Produce the reading output for the given ids, and upload them to db.
@@ -640,13 +650,14 @@ def produce_readings(id_dict, reader_list, verbose=False,
     verbose : bool
         Optional, default False - If True, log and print the output of the
         commandline reader utilities, if False, don't.
-    read_mode : str : 'all', 'unread-all', 'unread-unread', or 'none'
-        Optional, default 'undread-all' - If 'all', read everything (generally
-        slow); if 'unread-all', only read things that were unread, but use the
-        cache of old readings to get everything (as fast as you can be while
-        still getting everything); if 'unread-unread', just like 'unread-all',
-        but only return the unread content; if 'none', don't read, and only get
-        existing readings.
+    read_mode : str : 'all', 'unread', or 'none'
+        Optional, default 'undread' - If 'all', read everything (generally
+        slow); if 'unread', only read things that were unread, (the cache of old
+        readings may still be used if `stmt_mode='all'` to get everything); if
+        'none', don't read, and only retrieve existing readings.
+    get_preexisting : bool
+        Optional, default True. If True, retrieve old readings where available
+        (if `read_mode` is not 'all'). If False, don't retrieve old readings.
     force_fulltext : bool
         Optional, default False - If True, only read fulltext article, ignoring
         abstracts.
@@ -666,6 +677,10 @@ def produce_readings(id_dict, reader_list, verbose=False,
         Optional, default is None, in which case the primary database provided
         by `get_primary_db` function is used. Used to interface with a
         different databse.
+    log_readers : bool
+        Default True. If True, stash the logs of the readers in a file.
+    prioritize : bool
+        Default False. If True, choose only the best content to read.
 
     Returns
     -------
@@ -673,6 +688,7 @@ def produce_readings(id_dict, reader_list, verbose=False,
         A list of the outputs of the readings in the form of ReadingData
         instances.
     """
+    # Get a database instance.
     logger.debug("Producing readings in %s mode." % read_mode)
     if db is None:
         db = get_primary_db()
@@ -685,9 +701,10 @@ def produce_readings(id_dict, reader_list, verbose=False,
                                    always_add=['pubmed'], db=db)
         id_dict = {'tcid': list(tcids)}
 
+    # Handle the cases where I need to retrieve old readings.
     prev_readings = []
     skip_reader_tcid_dict = None
-    if read_mode not in ['all', 'unread-unread']:
+    if get_preexisting and read_mode != 'all':
         prev_readings = get_db_readings(id_dict, reader_list, force_fulltext,
                                         batch_size, db=db)
         skip_reader_tcid_dict = {r.name: [] for r in reader_list}
@@ -695,6 +712,8 @@ def produce_readings(id_dict, reader_list, verbose=False,
         if read_mode != 'none':
             for rd in prev_readings:
                 skip_reader_tcid_dict[rd.reader].append(rd.tcid)
+
+    # Now produce any new readings that need to be produced.
     outputs = []
     if read_mode != 'none':
         outputs = make_db_readings(id_dict, reader_list, verbose=verbose,
@@ -737,16 +756,18 @@ def upload_statements(stmt_data_list, db=None):
 
     logger.info("Uploading %d statements to the database." %
                 len(stmt_data_list))
-    db.copy('statements', [s.make_tuple() for s in stmt_data_list],
+    db.copy('raw_statements', [s.make_tuple() for s in stmt_data_list],
             StatementData.get_cols())
 
     logger.info("Uploading agents to the database.")
     reading_id_set = set([sd.reading_id for sd in stmt_data_list])
     if len(reading_id_set):
-        uuid_set = {s.statement.uuid for s in stmt_data_list}
-        insert_agents(db, db.Statements, db.Agents,
-                      db.Statements.uuid.in_(uuid_set), verbose=True,
-                      override_default_query=True)
+        db_stmts = (
+            db.select_one(db.RawStatements,
+                          db.RawStatements.uuid.like(s.statement.uuid))
+            for s in stmt_data_list
+            )
+        insert_agents(db, 'raw', db_stmts, verbose=True)
     return
 
 
@@ -827,6 +848,12 @@ if __name__ == "__main__":
     # Set the verbosity. The quiet argument overrides the verbose argument.
     verbose = args.verbose and not args.quiet
 
+    # Some combinations of options don't make sense:
+    forbidden_combos = [('all', 'unread'), ('none', 'unread'), ('none', 'none')]
+    assert (args.reading_mode, args.stmt_mode) not in forbidden_combos, \
+        ("The combination of reading mode %s and statement mode %s is not "
+         "allowed." % (args.reading_mode, args.stmt_mode))
+
     for n in range(n_max):
         logger.info("Beginning outer batch %d/%d. ------------" % (n+1, n_max))
 
@@ -843,12 +870,15 @@ if __name__ == "__main__":
 
         # Read everything ====================================================
         outputs = produce_readings(id_dict, readers, verbose=verbose,
-                                   read_mode=args.mode, batch_size=args.b_in,
+                                   read_mode=args.reading_mode,
+                                   get_preexisting=(args.stmt_mode == 'all'),
+                                   batch_size=args.b_in,
                                    force_fulltext=args.force_fulltext,
                                    no_upload=args.no_reading_upload,
                                    pickle_file=reading_pickle,
                                    prioritize=args.use_best_fulltext)
 
         # Convert the outputs to statements ==================================
-        produce_statements(outputs, no_upload=args.no_statement_upload,
-                           pickle_file=stmts_pickle, n_proc=args.n_proc)
+        if args.stmt_mode != 'none':
+            produce_statements(outputs, no_upload=args.no_statement_upload,
+                               pickle_file=stmts_pickle, n_proc=args.n_proc)

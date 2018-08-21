@@ -237,6 +237,8 @@ of dependencies.
 +-----------------+------------------------------------------------------+
 |ndex             |NDEx client for network input processing and CX upload|
 +-----------------+------------------------------------------------------+
+|sbml             |SBML model export through the PySB Assembler          |
++-----------------+------------------------------------------------------+
 |machine          |Running a local instance of a "RAS machine"           |
 +-----------------+------------------------------------------------------+
 |explanation      |Finding explanatory paths in rule-based models        |
@@ -249,6 +251,7 @@ of dependencies.
 +-----------------+------------------------------------------------------+
 |plot             |Create and display plots                              |
 +-----------------+------------------------------------------------------+
+
 Configuring INDRA
 -----------------
 Various aspects of INDRA, including API keys, dependency locations, and
@@ -284,3 +287,6 @@ reading system (path to a folder)
 
 - INDRA_DEFAULT_JAVA_MEM_LIMIT: Maximum memory limit for Java virtual machines
   launched by INDRA
+
+- SITEMAPPER_CACHE_PATH: Path to an optional cache (a pickle file) for the
+  SiteMapper's automatically obtained mappings.

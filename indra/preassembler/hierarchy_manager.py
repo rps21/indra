@@ -322,6 +322,37 @@ class HierarchyManager(object):
                                                    self.isa_or_partof_closure,
                                                    rel_fun)
 
+    def is_opposite(self, ns1, id1, ns2, id2):
+        """Return True if two entities are in an "is_opposite" relationship
+
+        Parameters
+        ----------
+        ns1 : str
+            Namespace code for an entity.
+        id1 : str
+            URI for an entity.
+        ns2 : str
+            Namespace code for an entity.
+        id2 : str
+            URI for an entity.
+
+        Returns
+        -------
+        bool
+            True if t1 has an "is_opposite" relationship with t2.
+        """
+        u1 = self.get_uri(ns1, id1)
+        u2 = self.get_uri(ns2, id2)
+        t1 = rdflib.term.URIRef(u1)
+        t2 = rdflib.term.URIRef(u2)
+
+        rel = rdflib.term.URIRef(self.relations_prefix + 'is_opposite')
+        to = self.graph.objects(t1, rel)
+        if t2 in to:
+            return True
+        return False
+
+
     def get_parents(self, uri, type='all'):
         """Return parents of a given entry.
 
@@ -390,7 +421,7 @@ class HierarchyManager(object):
             return 'http://identifiers.org/uniprot/' + id
         elif ns == 'FPLX':
             return 'http://identifiers.org/fplx/' + id
-        elif ns == 'EIDOS':
+        elif ns in ['UN', 'WDI', 'FAO', 'HUME']:
             return \
                 'https://github.com/clulab/eidos/wiki/JSON-LD/Grounding#' + id
         elif ns == 'CWMS':
@@ -451,6 +482,20 @@ hierarchies = {'entity': entity_hierarchy,
                'modification': modification_hierarchy,
                'activity': activity_hierarchy,
                'cellular_component': ccomp_hierarchy}
+
+
+def get_wm_hierarchies():
+    eidos_ont = os.path.join(os.path.dirname(__file__),
+                             '../sources/eidos/eidos_ontology.rdf')
+    hume_ont = os.path.join(os.path.dirname(__file__),
+                            '../sources/hume/hume_ontology.rdf')
+    trips_ont = os.path.join(os.path.dirname(__file__),
+                             '../sources/cwms/trips_ontology.rdf')
+    hm = HierarchyManager(eidos_ont, build_closure=True, uri_as_name=True)
+    hm.extend_with(hume_ont)
+    hm.extend_with(trips_ont)
+    wm_hierarchies = {'entity': hm}
+    return wm_hierarchies
 
 
 class UnknownNamespaceException(Exception):

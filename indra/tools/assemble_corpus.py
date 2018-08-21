@@ -139,6 +139,11 @@ def map_sequence(stmts_in, **kwargs):
         in other human isoforms of the protein (based on PhosphoSitePlus
         data). If a site is found that is linked to a site in the human
         reference sequence, a mapping is created. Default is True.
+    use_cache : boolean
+        If True, a cache will be created/used from the laction specified by
+        SITEMAPPER_CACHE_PATH, defined in your Indra config or the environment.
+        If false, no cache is used. For more details on the cache, see the
+        SiteMapper class definition.
     save : Optional[str]
         The name of a pickle file to save the results (stmts_out) into.
 
@@ -150,7 +155,7 @@ def map_sequence(stmts_in, **kwargs):
     logger.info('Mapping sites on %d statements...' % len(stmts_in))
     kwarg_list = ['do_methionine_offset', 'do_orthology_mapping',
                   'do_isoform_mapping']
-    sm = SiteMapper(default_site_map)
+    sm = SiteMapper(default_site_map, use_cache=kwargs.pop('use_cache', False))
     valid, mapped = sm.map_sites(stmts_in, **_filter(kwargs, kwarg_list))
     correctly_mapped_stmts = []
     for ms in mapped:
@@ -161,6 +166,7 @@ def map_sequence(stmts_in, **kwargs):
     dump_pkl = kwargs.get('save')
     if dump_pkl:
         dump_statements(stmts_out, dump_pkl)
+    del sm
     return stmts_out
 
 def run_preassembly(stmts_in, **kwargs):
@@ -333,10 +339,11 @@ def _agent_is_grounded(agent, score_threshold):
     if not db_names:
         grounded = False
     # If there are entries but they point to None / empty values
-    if not all([agent.db_refs[db_name] for db_name in db_names]):
+    if not any([agent.db_refs[db_name] for db_name in db_names]):
         grounded = False
     # If we are looking for scored groundings with a threshold
     if score_threshold:
+        any_passing = False
         for db_name in db_names:
             val = agent.db_refs[db_name]
             # If it's a list with some values, find the
@@ -344,8 +351,11 @@ def _agent_is_grounded(agent, score_threshold):
             if isinstance(val, list) and val:
                 high_score = sorted(val, key=lambda x: x[1],
                                     reverse=True)[0][1]
-                if high_score < score_threshold:
-                    grounded = False
+                if high_score > score_threshold:
+                    any_passing = True
+                    break
+        if not any_passing:
+            grounded = False
     return grounded
 
 
@@ -491,11 +501,7 @@ def filter_genes_only(stmts_in, **kwargs):
     stmts_out : list[indra.statements.Statement]
         A list of filtered statements.
     """
-
-    if 'remove_bound' in kwargs and kwargs['remove_bound']:
-        remove_bound = True
-    else:
-        remove_bound = False
+    remove_bound = 'remove_bound' in kwargs and kwargs['remove_bound']
 
     specific_only = kwargs.get('specific_only')
     logger.info('Filtering %d statements for ones containing genes only...' % 
@@ -549,10 +555,9 @@ def filter_belief(stmts_in, belief_cutoff, **kwargs):
     stmts_out = []
     # Now we eliminate supports/supported-by
     for stmt in stmts_in:
-        if stmt.belief >= belief_cutoff:
-            stmts_out.append(stmt)
-        else:
+        if stmt.belief < belief_cutoff:
             continue
+        stmts_out.append(stmt)
         supp_by = []
         supp = []
         for st in stmt.supports:
@@ -736,6 +741,86 @@ def filter_concept_names(stmts_in, name_list, policy, **kwargs):
                 stmts_out.append(st)
     else:
         stmts_out = stmts_in
+
+    logger.info('%d Statements after filter...' % len(stmts_out))
+    dump_pkl = kwargs.get('save')
+    if dump_pkl:
+        dump_statements(stmts_out, dump_pkl)
+    return stmts_out
+
+
+def filter_by_db_refs(stmts_in, namespace, values, policy, **kwargs):
+    """Filter to Statements whose agents are grounded to a matching entry.
+
+    Statements are filtered so that the db_refs entry (of the given namespace)
+    of their Agent/Concept arguments take a value in the given list of values.
+
+    Parameters
+    ----------
+    stmts_in : list[indra.statements.Statement]
+        A list of Statements to filter.
+    namespace : str
+        The namespace in db_refs to which the filter should apply.
+    values : list[str]
+        A list of values in the given namespace to which the filter should
+        apply.
+    policy : str
+        The policy to apply when filtering for the db_refs. "one": keep
+        Statements that contain at least one of the list of db_refs and
+        possibly others not in the list "all": keep Statements that only
+        contain db_refs given in the list
+    save : Optional[str]
+        The name of a pickle file to save the results (stmts_out) into.
+    invert : Optional[bool]
+        If True, the Statements that do not match according to the policy
+        are returned. Default: False
+    match_suffix : Optional[bool]
+        If True, the suffix of the db_refs entry is matches agains the list
+        of entries
+
+    Returns
+    -------
+    stmts_out : list[indra.statements.Statement]
+        A list of filtered Statements.
+    """
+    invert = kwargs.get('invert', False)
+    match_suffix = kwargs.get('match_suffix', False)
+
+    if policy not in ('one', 'all'):
+        logger.error('Policy %s is invalid, not applying filter.' % policy)
+        return
+    else:
+        name_str = ', '.join(values)
+        rev_mod = 'not ' if invert else ''
+        logger.info(('Filtering %d statements for those with %s agents %s'
+                     'grounded to: %s in the %s namespace...') %
+                        (len(stmts_in), policy, rev_mod, name_str, namespace))
+
+    def meets_criterion(agent):
+        if namespace not in agent.db_refs:
+            return False
+        entry = agent.db_refs[namespace]
+        if isinstance(entry, list):
+            entry = entry[0][0]
+        ret = False
+        # Match suffix or entire entry
+        if match_suffix:
+            if any([entry.endswith(e) for e in values]):
+                ret = True
+        else:
+            if entry in values:
+                ret = True
+        # Invert if needed
+        if invert:
+            return not ret
+        else:
+            return ret
+
+    enough = all if policy == 'all' else any
+
+    stmts_out = [s for s in stmts_in
+                 if enough([meets_criterion(ag) for ag in s.agent_list()
+                            if ag is not None])]
 
     logger.info('%d Statements after filter...' % len(stmts_out))
     dump_pkl = kwargs.get('save')
@@ -1284,18 +1369,27 @@ def filter_uuid_list(stmts_in, uuids, **kwargs):
         A list of UUIDs to filter for.
     save : Optional[str]
         The name of a pickle file to save the results (stmts_out) into.
+    invert : Optional[bool]
+        Invert the filter to remove the Statements corresponding to the given
+        UUIDs.
 
     Returns
     -------
     stmts_out : list[indra.statements.Statement]
         A list of filtered statements.
     """
+    invert = kwargs.get('invert', False)
     logger.info('Filtering %d statements for %d UUID%s...' %
                 (len(stmts_in), len(uuids), 's' if len(uuids) > 1 else ''))
     stmts_out = []
     for st in stmts_in:
-        if st.uuid in uuids:
-            stmts_out.append(st)
+        if not invert:
+            if st.uuid in uuids:
+                stmts_out.append(st)
+        else:
+            if st.uuid not in uuids:
+                stmts_out.append(st)
+
     logger.info('%d statements after filter...' % len(stmts_out))
     dump_pkl = kwargs.get('save')
     if dump_pkl:
@@ -1436,6 +1530,53 @@ def rename_db_ref(stmts_in, ns_from, ns_to, **kwargs):
     if dump_pkl:
         dump_statements(stmts_out, dump_pkl)
     return stmts_out
+
+
+def align_statements(stmts1, stmts2, keyfun=None):
+    """Return alignment of two lists of statements by key.
+
+    Parameters
+    ----------
+    stmts1 : list[indra.statements.Statement]
+        A list of INDRA Statements to align
+    stmts2 : list[indra.statements.Statement]
+        A list of INDRA Statements to align
+    keyfun : Optional[function]
+        A function that takes a Statement as an argument
+        and returns a key to align by. If not given,
+        the default key function is a tuble of the names
+        of the Agents in the Statement.
+
+    Return
+    ------
+    matches : list(tuple)
+        A list of tuples where each tuple has two elements,
+        the first corresponding to an element of the stmts1
+        list and the second corresponding to an element
+        of the stmts2 list. If a given element is not matched,
+        its corresponding pair in the tuple is None.
+    """
+    def name_keyfun(stmt):
+        return tuple(a.name if a is not None else None for
+                     a in stmt.agent_list())
+    if not keyfun:
+        keyfun = name_keyfun
+    matches = []
+    keys1 = [keyfun(s) for s in stmts1]
+    keys2 = [keyfun(s) for s in stmts2]
+    for stmt, key in zip(stmts1, keys1):
+        try:
+            match_idx = keys2.index(key)
+            match_stmt = stmts2[match_idx]
+            matches.append((stmt, match_stmt))
+        except ValueError:
+            matches.append((stmt, None))
+    for stmt, key in zip(stmts2, keys2):
+        try:
+            match_idx = keys1.index(key)
+        except ValueError:
+            matches.append((None, stmt))
+    return matches
 
 
 if __name__ == '__main__':

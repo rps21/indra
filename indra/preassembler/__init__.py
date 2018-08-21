@@ -289,12 +289,13 @@ class Preassembler(object):
                     stmt_by_group[first_arg_key] += stmts
         return stmt_by_group
 
-    def _generate_id_maps(self, unique_stmts, poolsize=None, size_cutoff=100):
+    def _generate_id_maps(self, unique_stmts, poolsize=None,
+                          size_cutoff=100, split_idx=None):
         """Connect statements using their refinement relationships."""
         # Check arguments relating to multiprocessing
         if poolsize is None:
-            logger.info('combine_related: poolsize not set, '
-                        'not using multiprocessing.')
+            logger.debug('combine_related: poolsize not set, '
+                         'not using multiprocessing.')
             use_mp = False
         elif sys.version_info[0] >= 3 and sys.version_info[1] >= 4:
             use_mp = True
@@ -329,8 +330,13 @@ class Preassembler(object):
                     parent_proc_groups.append(g)
 
         # Now run preassembly!
-        logger.info("Groups: %d parent, %d worker" %
-                    (len(parent_proc_groups), len(child_proc_groups)))
+        logger.debug("Groups: %d parent, %d worker" %
+                     (len(parent_proc_groups), len(child_proc_groups)))
+
+        supports_func = functools.partial(_set_supports_stmt_pairs,
+                                          hierarchies=self.hierarchies,
+                                          split_idx=split_idx,
+                                          check_entities_match=False)
 
         # Check if we are running any groups in child processes; note that if
         # use_mp is False, child_proc_groups will be empty
@@ -338,9 +344,6 @@ class Preassembler(object):
             # Get a multiprocessing context
             ctx = mp.get_context('spawn')
             pool = ctx.Pool(poolsize)
-            supports_func = functools.partial(_set_supports_stmt_pairs,
-                                              hierarchies=self.hierarchies,
-                                              check_entities_match=False)
             # Run the large groups remotely
             logger.debug("Running %d groups in child processes" %
                          len(child_proc_groups))
@@ -352,11 +355,9 @@ class Preassembler(object):
         # Run the small groups locally
         logger.debug("Running %d groups in parent process" %
                      len(parent_proc_groups))
-        stmt_ix_map = []
-        for stmt_tuples in parent_proc_groups:
-            stmt_ix_map.append(_set_supports_stmt_pairs(stmt_tuples,
-                                            hierarchies=self.hierarchies))
-        logger.info("Done running parent process groups")
+        stmt_ix_map = [supports_func(stmt_tuples)
+                       for stmt_tuples in parent_proc_groups]
+        logger.debug("Done running parent process groups")
 
         while not workers_ready:
             logger.debug("Checking child processes")
@@ -372,7 +373,7 @@ class Preassembler(object):
                 pool.close()
                 pool.join()
             time.sleep(1)
-        logger.info("Done.")
+        logger.debug("Done.")
         # Combine all redundant map edges
         stmt_ix_map_set = set([])
         for group_ix_map in stmt_ix_map:
@@ -532,10 +533,24 @@ class Preassembler(object):
         return contradicts
 
 
-def _set_supports_stmt_pairs(stmt_tuples, hierarchies=None,
+def _set_supports_stmt_pairs(stmt_tuples, split_idx=None, hierarchies=None,
                              check_entities_match=False):
+    # Make the iterator by one of two methods, depending on the case
+    if split_idx is None:
+        stmt_pair_iter = itertools.combinations(stmt_tuples, 2)
+    else:
+        stmt_group_a = []
+        stmt_group_b = []
+        for idx, stmt in stmt_tuples:
+            if idx <= split_idx:
+                stmt_group_a.append((idx, stmt))
+            else:
+                stmt_group_b.append((idx, stmt))
+        stmt_pair_iter = itertools.product(stmt_group_a, stmt_group_b)
+
+    # Actually create the index maps.
     ix_map = []
-    for stmt_tuple1, stmt_tuple2 in itertools.combinations(stmt_tuples, 2):
+    for stmt_tuple1, stmt_tuple2 in stmt_pair_iter:
         stmt_ix1, stmt1 = stmt_tuple1
         stmt_ix2, stmt2 = stmt_tuple2
         if check_entities_match and not stmt1.entities_match(stmt2):
@@ -544,6 +559,7 @@ def _set_supports_stmt_pairs(stmt_tuples, hierarchies=None,
             ix_map.append((stmt_ix1, stmt_ix2))
         elif stmt2.refinement_of(stmt1, hierarchies):
             ix_map.append((stmt_ix2, stmt_ix1))
+
     return ix_map
 
 

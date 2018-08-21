@@ -165,17 +165,17 @@ def test_load_eidos_hierarchy():
     eidos_ns = 'https://github.com/clulab/eidos/wiki/JSON-LD/Grounding#'
     hm = HierarchyManager(eidos_ont, True, True)
     assert hm.isa_closure
-    eidos_isa = lambda a, b: hm.isa('EIDOS', a, 'EIDOS', b)
-    assert eidos_isa('events/human/conflict/war',
-                     'events/human/conflict')
-    assert not eidos_isa('events/human/conflict/war',
-                         'events/human/human_migration/migration')
-    assert eidos_isa('entities/measurement/distance/meter',
-                     'entities/measurement')
-    assert eidos_isa('events/natural/weather/storm/tornado',
-                     'events')
-    assert not eidos_isa('events',
-                         'events/natural/weather/storm/tornado')
+    eidos_isa = lambda a, b: hm.isa('UN', a, 'UN', b)
+    assert eidos_isa('UN/events/human/conflict',
+                     'UN/events/human')
+    assert not eidos_isa('UN/events/human/conflict',
+                         'UN/events/human/human_migration')
+    assert eidos_isa('UN/entities/human/infrastructure',
+                     'UN/entities')
+    assert eidos_isa('UN/events/natural_disaster/storm',
+                     'UN/events')
+    assert not eidos_isa('UN/events',
+                         'UN/events/natural/weather/storm')
 
 
 def test_load_trips_hierarchy():
@@ -189,6 +189,17 @@ def test_load_trips_hierarchy():
     assert trips_isa('ONT::MONEY', 'ONT::PHYS-OBJECT')
     assert trips_isa('ONT::TABLE', 'ONT::MANUFACTURED-OBJECT')
 
+
+def test_load_hume_hierarchy():
+    hume_ont = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           '../sources/hume/hume_ontology.rdf')
+    hm = HierarchyManager(hume_ont, True, True)
+    assert hm.isa_closure
+    hume_isa = lambda a, b: hm.isa('HUME', a, 'HUME', b)
+    assert hume_isa('entity/academic_discipline', 'entity')
+    assert not hume_isa('entity', 'entity/academic_discipline')
+    assert hume_isa('event/healthcare/human_disease',
+                   'event/healthcare')
 
 def test_same_components():
     uri_prkag1 = ent_hierarchy.get_uri('HGNC', 'PRKAG1')

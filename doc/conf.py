@@ -303,16 +303,19 @@ texinfo_documents = [
 # Note that for sub-modules, all parent modules must be listed explicitly.
 MOCK_MODULES = [
     'pybel', 'pybel.constants', 'pybel.struct', 'pybel.canonicalize', 'pybel.language',
-    'pygraphviz', 'jnius', 'jnius_config',
+    'pygraphviz', 'jnius', 'jnius_config', 'flask',
     'rdflib', 'rdflib.namespace', 'rdflib.plugins', 'networkx.drawing.nx_agraph',
     'rdflib.plugins.parsers', 'rdflib.plugins.parsers.ntriples',
     'objectpath', 'lxml', 'lxml.etree', 'lxml.builder',
-    'networkx', 'networkx.algorithms', 'networkx.algorithms.dag', 'networkx.drawing',
+    'networkx', 'networkx.algorithms', 'networkx.algorithms.dag',
+    'networkx.drawing', 'networkx.algorithms.isomorphism',
+    'networkx.algorithms.isomorphism.vf2userfunc',
     'functools32', 'ndex2', 'ndex2.client', 'ndex2.niceCXNetwork',
     'sqlalchemy', 'sqlalchemy.ext', 'sqlalchemy.ext.declarative',
     'sqlalchemy.orm', 'sqlalchemy.orm.attributes', 'sqlalchemy.dialects',
     'sqlalchemy.dialects.postgresql', 'sqlalchemy.schema', 'sqlalchemy.ext.compiler',
-    'sqlalchemy.sql', 'sqlalchemy.sql.expression', 'nltk', 'kappy', 'openpyxl'
+    'sqlalchemy.sql', 'sqlalchemy.sql.expression', 'nltk', 'kappy', 'openpyxl',
+    'reportlab'
     ]
 for mod_name in MOCK_MODULES:
     sys.modules[mod_name] = mock.MagicMock()

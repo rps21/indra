@@ -31,20 +31,28 @@ class EidosJsonLdProcessor(object):
         self.entity_dict = {}
 
     def get_events(self):
-        events = \
-            self.tree.execute("$.extractions[(@.@type is 'DirectedRelation')]")
-        if not events:
+        extractions = \
+            self.tree.execute("$.extractions[(@.@type is 'Extraction')]")
+        if not extractions:
             return
+        # Listify for multiple reuse
+        extractions = list(extractions)
+
+        events = [e for e in extractions if 'DirectedRelation' in
+                  e.get('labels', [])]
 
         # Build a dictionary of entities and sentences by ID for convenient
         # lookup
-        entities = \
-            self.tree.execute("$.extractions[(@.@type is 'Entity')]")
+        entities = [e for e in extractions if 'Concept' in
+                    e.get('labels', [])]
         self.entity_dict = {entity['@id']: entity for entity in entities}
 
-        sentences = \
-            self.tree.execute("$.extractions[(@.@type is 'Sentence')]")
-        self.sentence_dict = {sent['@id']: sent for sent in sentences}
+        documents = \
+            self.tree.execute("$.documents[(@.@type is 'Document')]")
+        self.sentence_dict = {}
+        for document in documents:
+            sentences = document.get('sentences', [])
+            self.sentence_dict = {sent['@id']: sent for sent in sentences}
 
         # The first state corresponds to increase/decrease
         def get_polarity(x):
@@ -70,66 +78,92 @@ class EidosJsonLdProcessor(object):
             else:
                 return []
 
-        def _get_eidos_groundings(entity):
-            """Return Eidos groundings are a list of tuples with scores."""
-            grounding_tag = entity.get('groundings')
-            # If no grounding at all, just return None
-            if not grounding_tag:
+        def _get_grounding_tuples(grounding):
+            if not grounding or "values" not in grounding:
                 return None
-            # The grounding dict can still be empty
-            grounding_dict = grounding_tag[0]
-            if not grounding_dict or 'values' not in grounding_dict:
-                return None
-            grounding_values = grounding_dict.get('values', [])
-            # Otherwise get all the groundings that have non-zero score
-            grounding_tuples = []
-            for g in grounding_values:
-                if g['value'] > 0:
-                    if g['ontologyConcept'].startswith('/'):
-                        concept = g['ontologyConcept'][1:]
-                    else:
-                        concept = g['ontologyConcept']
-                    grounding_tuples.append((concept, g['value']))
-            # For some versions of eidos, groundings may erroneously have
-            # the /examples suffix; strip that off if present
-            for ind in range(len(grounding_tuples)):
-                t = grounding_tuples[ind]
-                assert(len(t) == 2)
-                if t[0].endswith('/examples'):
-                    name = t[0]
-                    name = name[:-len('/examples')]
-                    score = t[1]
-                    grounding_tuples[ind] = (name, score)
-            return grounding_tuples
+
+            grounding_values = grounding.get("values", [])
+
+            grounding_tuples = map(
+                # For some versions of eidos, groundings may erroneously have
+                # the /examples suffix; strip that off if present
+                lambda t: (
+                    (t[0][: -len("/examples")], t[1])
+                    if t[0].endswith("/examples")
+                    else (t[0][: -len("/description")], t[1])
+                    if t[0].endswith("/description")
+                    else t
+                ),
+                map(
+                    lambda x: (
+                        (x["ontologyConcept"][1:], x["value"])
+                        if x["ontologyConcept"].startswith("/")
+                        else (x["ontologyConcept"], x["value"])
+                    ),
+                    # get all the groundings that have non-zero score
+                    filter(lambda x: x["value"] > 0, grounding_values),
+                ),
+            )
+
+            return list(grounding_tuples)
+
+        def _get_groundings(entity):
+            """Return Eidos groundings as a list of tuples with scores."""
+            refs = {'TEXT': entity['text']}
+            groundings = entity.get('groundings', [])
+            for g in groundings:
+                values = _get_grounding_tuples(g)
+                # Only add these groundings if there are actual values listed
+                if values:
+                    key = g['name'].upper()
+                    refs[key] = values
+            return refs
 
         def _make_concept(entity):
             """Return Concept from an Eidos entity."""
             # Use the canonical name as the name of the Concept
             name = entity['canonicalName']
             # Save raw text and Eidos scored groundings as db_refs
-            db_refs = {'TEXT': entity['text'],
-                       'EIDOS': _get_eidos_groundings(entity)}
+            db_refs = {'TEXT': entity['text']}
+            groundings = _get_groundings(entity)
+            db_refs.update(groundings)
             concept = Concept(name, db_refs=db_refs)
             return concept
 
+        def find_arg(event, arg_type):
+            args = event.get('arguments', {})
+            obj_tag = [arg for arg in args if arg['type'] == arg_type]
+            if obj_tag:
+                obj_id = obj_tag[0]['value']['@id']
+            else:
+                obj_id = None
+            return obj_id
+
         for event in events:
-            if 'Causal' in event['labels']:
-                # For now, just take the first source and first destination.
-                # Later, might deal with hypergraph representation.
-                subj = self.entity_dict[event['sources'][0]['@id']]
-                obj = self.entity_dict[event['destinations'][0]['@id']]
+            if not 'Causal' in event['labels']:
+                continue
 
-                subj_delta = {'adjectives': get_adjectives(subj),
-                              'polarity': get_polarity(subj)}
-                obj_delta = {'adjectives': get_adjectives(obj),
-                             'polarity': get_polarity(obj)}
+            # For now, just take the first source and first destination.
+            # Later, might deal with hypergraph representation.
+            subj_id = find_arg(event, 'source')
+            obj_id = find_arg(event, 'destination')
+            if subj_id is None or obj_id is None:
+                continue
 
-                evidence = self._get_evidence(event)
+            subj = self.entity_dict[subj_id]
+            obj = self.entity_dict[obj_id]
 
-                st = Influence(_make_concept(subj), _make_concept(obj),
-                               subj_delta, obj_delta, evidence=evidence)
+            subj_delta = {'adjectives': get_adjectives(subj),
+                          'polarity': get_polarity(subj)}
+            obj_delta = {'adjectives': get_adjectives(obj),
+                         'polarity': get_polarity(obj)}
 
-                self.statements.append(st)
+            evidence = self._get_evidence(event)
+
+            st = Influence(_make_concept(subj), _make_concept(obj),
+                           subj_delta, obj_delta, evidence=evidence)
+
+            self.statements.append(st)
 
     def _get_evidence(self, event):
         """Return the Evidence object for the INDRA Statment."""
@@ -137,13 +171,25 @@ class EidosJsonLdProcessor(object):
 
         # First try looking up the full sentence through provenance
         text = None
+        time_annot = {}
         if provenance:
             sentence_tag = provenance[0].get('sentence')
             if sentence_tag and '@id' in sentence_tag:
                 sentence_id = sentence_tag['@id']
                 sentence = self.sentence_dict.get(sentence_id)
                 if sentence is not None:
-                    text = self._sanitize(sentence)
+                    text = self._sanitize(sentence['text'])
+                # Get temporal constraints if available
+                timexes = sentence.get('timexes', [])
+                if timexes:
+                    time_text = timexes[0].get('text')
+                    constraint = timexes[0]['intervals'][0]
+                    start = constraint['start']
+                    end = constraint['end']
+                    duration = constraint['duration']
+                    time_annot = {'text': time_text, 'start': start,
+                                  'end': end, 'duration': duration}
+
         # If that fails, we can still get the text of the event
         if text is None:
             text = self._sanitize(event.get('text'))
@@ -152,6 +198,8 @@ class EidosJsonLdProcessor(object):
                 'found_by'   : event.get('rule'),
                 'provenance' : provenance,
                 }
+        if time_annot:
+            annotations['time'] = time_annot
         ev = Evidence(source_api='eidos', text=text, annotations=annotations)
         return [ev]
 

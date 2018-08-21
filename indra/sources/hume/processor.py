@@ -1,21 +1,23 @@
 import re
+import os
 import rdflib
 import logging
 import objectpath
 import collections
+from os.path import basename
 from indra.statements import Concept, Influence, Evidence
 
 
-logger = logging.getLogger('bbn')
+logger = logging.getLogger('hume')
 
 
-class BBNJsonLdProcessor(object):
-    """This processor extracts INDRA Statements from BBN JSON-LD output.
+class HumeJsonLdProcessor(object):
+    """This processor extracts INDRA Statements from Hume JSON-LD output.
 
     Parameters
     ----------
     json_dict : dict
-        A JSON dictionary containing the BBN extractions in JSON-LD format.
+        A JSON dictionary containing the Hume extractions in JSON-LD format.
 
     Attributes
     ----------
@@ -28,8 +30,9 @@ class BBNJsonLdProcessor(object):
         self.tree = objectpath.Tree(json_dict)
         self.statements = []
         self.document_dict = {}
-        self.entity_dict = {}
-        self.event_dict = {}
+        self.concept_dict = {}
+        self.relation_dict = {}
+        self.eid_stmt_dict = {}
 
     def get_documents(self):
         """Populate the sentences attribute with a dict keyed by document id."""
@@ -41,129 +44,123 @@ class BBNJsonLdProcessor(object):
         return
 
     def get_events(self):
-        events = \
-            list(self.tree.execute("$.extractions[(@.@type is 'Event')]"))
-        if not events:
+        # Get all extractions
+        extractions = \
+            list(self.tree.execute("$.extractions[(@.@type is 'Extraction')]"))
+
+        # Get relations from extractions
+        relations = [e for e in extractions if 'DirectedRelation' in
+                     e.get('labels', [])]
+        if not relations:
             return
-        self.event_dict = {ev['@id']: ev for ev in events}
+        self.relation_dict = {rel['@id']: rel for rel in relations}
 
-        # TODO: are there other event types we can use?
-        extract_types = ['Cause-Effect']
-        # Restrict to known event types
-        events = [e for e in events if e.get('type') in extract_types]
-        logger.info('%d events of types %s found' % (len(events),
-                                                     ', '.join(extract_types)))
+        # List out relation types and their default (implied) polarities.
+        relation_polarities = {'causation': 1, 'precondition': 1, 'catalyst': 1,
+                               'mitigation': -1, 'prevention': -1}
 
-        # Build a dictionary of entities and sentences by ID for convenient
+        # Restrict to known relation types
+        relations = [r for r in relations if any([rt in r.get('type') for rt in
+                                                  relation_polarities.keys()])]
+        logger.info('%d relations of types %s found'
+                    % (len(relations), ', '.join(relation_polarities.keys())))
+
+        # Build a dictionary of concepts and sentences by ID for convenient
         # lookup
-        entities = \
-            self.tree.execute("$.extractions[(@.@type is 'Entity')]")
-        self.entity_dict = {entity['@id']: entity for entity in entities}
+        concepts = [e for e in extractions if
+                    set(e.get('labels', [])) & {'Event', 'Entity'}]
+        self.concept_dict = {concept['@id']: concept for concept in concepts}
 
         self.get_documents()
 
-        # The first state corresponds to increase/decrease
-        def get_polarity(event):
-            pol_map = {'Positive': 1, 'Negative': -1}
-            if 'states' in event:
-                for state_property in event['states']:
-                    if state_property['type'] == 'polarity':
-                        return pol_map[state_property['text']]
-            return None
+        for relation in relations:
+            relation_type = relation.get('type')
+            subj_concept, subj_delta = self._get_concept(relation, 'source')
+            obj_concept, obj_delta = self._get_concept(relation, 'destination')
 
-        def get_adjectives(event):
-            ret_list = []
-            if 'states' in event:
-                for state_property in event['states']:
-                    if state_property['type'] != 'polarity':
-                        ret_list.append(state_property['text'])
-            return ret_list
+            # Apply the naive polarity from the type of statement. For the
+            # purpose of the multiplication here, if obj_delta['polarity'] is
+            # None to begin with, we assume it is positive
+            obj_delta['polarity'] = \
+                relation_polarities[relation_type] * \
+                (obj_delta['polarity'] if obj_delta['polarity'] is not None
+                 else 1)
 
-        def _get_bbn_grounding(entity):
-            """Return BBN grounding."""
-            grounding = entity['type']
-            if grounding.startswith('/'):
-                grounding = grounding[1:]
-            return grounding
-
-        def _make_concept(entity):
-            """Return Concept from an BBN entity."""
-            # Use the canonical name as the name of the Concept
-            name = self._sanitize(entity['canonicalName'])
-            # Save raw text and BBN scored groundings as db_refs
-            db_refs = {'TEXT': entity['text'],
-                       'BBN': _get_bbn_grounding(entity)}
-            concept = Concept(name, db_refs=db_refs)
-            return concept
-
-        for event in events:
-            args = event.get('arguments', {})
-            subj_tag = [arg for arg in args if arg['type'] == 'has_cause']
-            if subj_tag:
-                subj_id = subj_tag[0]['value']['@id']
-            else:
-                subj_id = None
-            obj_tag = [arg for arg in args if arg['type'] == 'has_effect']
-            if obj_tag:
-                obj_id = obj_tag[0]['value']['@id']
-            else:
-                obj_id = None
-
-            # Skip event if either argument is missing
-            if not subj_id or not obj_id:
+            if not subj_concept or not obj_concept:
                 continue
 
-            subj = self.event_dict[subj_id]
-            obj = self.event_dict[obj_id]
+            evidence = self._get_evidence(relation, subj_concept, obj_concept,
+                                          get_states(relation))
 
-            subj_concept = _make_concept(subj)
-            obj_concept = _make_concept(obj)
-
-            # Adjectives are not extracted for now, in the case of BBN
-            # they are things like 'Asserted', 'Specific', 'Generic'
-            subj_delta = {'adjectives': [],
-                          'polarity': get_polarity(subj)}
-            obj_delta = {'adjectives': [],
-                         'polarity': get_polarity(obj)}
-
-            evidence = self._get_evidence(event, subj_concept, obj_concept)
-
-            st = Influence(subj_concept, obj_concept,
-                           subj_delta, obj_delta, evidence=evidence)
-
+            st = Influence(subj_concept, obj_concept, subj_delta, obj_delta,
+                           evidence=evidence)
+            self.eid_stmt_dict[relation['@id']] = st
             self.statements.append(st)
 
-    def _get_evidence(self, event, subj_concept, obj_concept):
+        return
+
+    def _make_concept(self, entity):
+        """Return Concept from a Hume entity."""
+        # Use the canonical name as the name of the Concept by default
+        name = self._sanitize(entity['canonicalName'])
+        # But if there is a trigger head text, we prefer that since
+        # it almost always results in a cleaner name
+        # This is removed for now since the head word seems to be too
+        # minimal for some concepts, e.g. it gives us only "security"
+        # for "food security".
+        """
+        trigger = entity.get('trigger')
+        if trigger is not None:
+            head_text = trigger.get('head text')
+            if head_text is not None:
+                name = head_text
+        """
+        # Save raw text and Hume scored groundings as db_refs
+        db_refs = {'TEXT': entity['text']}
+        hume_grounding = _get_hume_grounding(entity)
+        # We could get an empty list here in which case we don't add the
+        # grounding
+        if hume_grounding:
+            db_refs['HUME'] = hume_grounding
+        concept = Concept(name, db_refs=db_refs)
+        return concept
+
+    def _get_concept(self, event, arg_type):
+        eid = _choose_id(event, arg_type)
+        ev = self.concept_dict[eid]
+        concept = self._make_concept(ev)
+        ev_delta = {'adjectives': [],
+                    'states': get_states(ev),
+                    'polarity': get_polarity(ev)}
+        return concept, ev_delta
+
+    def _get_evidence(self, event, subj_concept, obj_concept, adjectives):
         """Return the Evidence object for the INDRA Statement."""
         provenance = event.get('provenance')
 
         # First try looking up the full sentence through provenance
-        doc_info = provenance[0].get('document')
-        doc_id = doc_info['@id']
-        agent_strs = [ag.db_refs['TEXT'] for ag in [subj_concept, obj_concept]]
-        text = None
-        for sent in self.document_dict[doc_id]['sentences'].values():
-            # We take the first match, which _might_ be wrong sometimes. Perhaps
-            # refine further later.
-            if all([agent_text in sent for agent_text in agent_strs]):
-                text = self._sanitize(sent)
-                break
-        else:
-            logger.warning("Could not find sentence in document %s for event "
-                           "with agents: %s" % (doc_id, str(agent_strs)))
+        doc_id = provenance[0]['document']['@id']
+        sent_id = provenance[0]['sentence']
+        text = self.document_dict[doc_id]['sentences'][sent_id]
+        text = self._sanitize(text)
+        bounds = [provenance[0]['documentCharPositions'][k]
+                  for k in ['start', 'end']]
 
         annotations = {
-                'found_by'   : event.get('rule'),
-                'provenance' : provenance,
-                }
+            'found_by': event.get('rule'),
+            'provenance': provenance,
+            'event_type': basename(event.get('type')),
+            'adjectives': adjectives,
+            'bounds': bounds
+            }
         location = self.document_dict[doc_id]['location']
-        ev = Evidence(source_api='bbn', text=text, annotations=annotations,
+        ev = Evidence(source_api='hume', text=text, annotations=annotations,
                       pmid=location)
         return [ev]
 
     @staticmethod
     def _sanitize(text):
-        """Return sanitized BBN text field for human readability."""
+        """Return sanitized Hume text field for human readability."""
         # TODO: any cleanup needed here?
         if text is None:
             return None
@@ -171,8 +168,87 @@ class BBNJsonLdProcessor(object):
         return text
 
 
+def _choose_id(event, arg_type):
+    args = event.get('arguments', {})
+    obj_tag = [arg for arg in args if arg['type'] == arg_type]
+    if obj_tag:
+        obj_id = obj_tag[0]['value']['@id']
+    else:
+        obj_id = None
+    return obj_id
 
-# OLD BBN PROCESSOR
+
+def get_states(event):
+    ret_list = []
+    if 'states' in event:
+        for state_property in event['states']:
+            if state_property['type'] != 'polarity':
+                ret_list.append(state_property['text'])
+    return ret_list
+
+
+def _get_hume_grounding(entity):
+    """Return Hume grounding."""
+    groundings = entity.get('grounding')
+    if not groundings:
+        return None
+    def get_ont_concept(concept):
+        """Strip slah, replace spaces and remove example leafs."""
+        if concept.startswith('/'):
+            concept = concept[1:]
+        concept = concept.replace(' ', '_')
+        # We eliminate any entries that aren't ontology categories
+        # these are typically "examples" corresponding to the category
+        while concept not in hume_onto_entries:
+            parts = concept.split('/')
+            if len(parts) == 1:
+                break
+            concept = '/'.join(parts[:-1])
+        return concept
+
+    # Basic collection of grounding entries
+    raw_grounding_entries = [(get_ont_concept(g['ontologyConcept']),
+                              g['value']) for g in groundings]
+
+    # Occasionally we get duplicate grounding entries, we want to
+    # eliminate those here
+    grounding_dict = {}
+    for cat, score in raw_grounding_entries:
+        if (cat not in grounding_dict) or (score > grounding_dict[cat]):
+            grounding_dict[cat] = score
+    # Then we sort the list in reverse order according to score
+    # Sometimes the exact same score appears multiple times, in this
+    # case we prioritize by the "depth" of the grounding which is
+    # obtained by looking at the number of /-s in the entry
+    grounding_entries = sorted(list(set(grounding_dict.items())),
+                               key=lambda x: (x[1], x[0].count('/')),
+                               reverse=True)
+
+    return grounding_entries
+
+
+def get_polarity(event):
+    pol_map = {'Positive': 1, 'Negative': -1}
+    if 'states' in event:
+        for state_property in event['states']:
+            if state_property['type'] == 'polarity':
+                return pol_map[state_property['text']]
+    return None
+
+
+def _get_ontology_entries():
+    path_here = os.path.dirname(os.path.abspath(__file__))
+    onto_file = os.path.join(path_here, 'hume_ontology.rdf')
+    G = rdflib.Graph()
+    G.parse(onto_file, format='nt')
+    entries = [e.toPython().split('#')[1] for e in G.all_nodes()]
+    return entries
+
+
+hume_onto_entries = _get_ontology_entries()
+
+
+# OLD PROCESSOR
 
 prefixes = """
     PREFIX causal: <http://www.bbn.com/worldmodelers/ontology/wm/CauseEffect#>
@@ -182,8 +258,8 @@ prefixes = """
     """
 
 
-class BBNProcessor(object):
-    """Process a BBN extraction graph into INDRA Statements.
+class HumeProcessor(object):
+    """Process a Hume extraction graph into INDRA Statements.
 
     Parameters
     ----------
@@ -194,7 +270,7 @@ class BBNProcessor(object):
     Attributes
     ----------
     statements: list[indra.statements.Statement]
-        INDRA statements extracted from BBN reader output.
+        INDRA statements extracted from Hume reader output.
     """
     def __init__(self, graph):
         self.graph = graph
@@ -264,7 +340,7 @@ class BBNProcessor(object):
 
 class CauseEffect(object):
     """A data structure to incrementally store cause/effect information as it
-    is extracted from the BBN JSON file.
+    is extracted from the Hume JSON file.
 
     Parameters
     ----------
@@ -326,7 +402,7 @@ class CauseEffect(object):
             evidence_text = evidence_texts[0]
         else:
             evidence_text = repr(evidence_texts)
-        ev = Evidence(source_api='bbn', text=str(evidence_text))
+        ev = Evidence(source_api='hume', text=str(evidence_text))
 
         # Convert from rdf literal to python string
         cause_text = str(cause_text)
@@ -335,13 +411,13 @@ class CauseEffect(object):
         # Make cause concept
         cause_db_refs = {'TEXT': cause_text}
         if self.cause_type is not None:
-            cause_db_refs['BBN'] = self.cause_type
+            cause_db_refs['HUME'] = self.cause_type
         cause_concept = Concept(cause_text, db_refs=cause_db_refs)
 
         # Make effect concept
         effect_db_refs = {'TEXT': effect_text}
         if self.effect_type is not None:
-            effect_db_refs['BBN'] = self.effect_type
+            effect_db_refs['HUME'] = self.effect_type
         effect_concept = Concept(effect_text, db_refs=effect_db_refs)
 
         return Influence(cause_concept, effect_concept, evidence=ev)
