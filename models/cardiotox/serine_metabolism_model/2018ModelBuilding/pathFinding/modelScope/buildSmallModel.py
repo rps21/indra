@@ -24,15 +24,17 @@ def buildSmallModel(stmts,writeBNGL=False):
     finalStmts4 = ex.removeDimers(finalStmts3)
     finalStmts5 = ex.removeMutations(finalStmts4)
 
-    pa = PysbAssembler()
-    pa.add_statements(finalStmts5)
-    modifiedModel = pa.make_model()
-    modifiedModel = addObservables(modifiedModel,bound=True)
+#    pa = PysbAssembler()
+#    pa.add_statements(finalStmts5)
+#    modifiedModel = pa.make_model()
+#    modifiedModel = addObservables(modifiedModel,bound=True)
 
-    if writeBNGL:
-        bngl_model = pysb.export.export(modifiedModel,'bngl')
-        with open('bnglModelTesting/modifiedModel.bngl','w') as bnglFile:
-            bnglFile.write(bngl_model)
-            actionsBlock = addSimParamters('ode',True,['EGF(erbb)'])
-            bnglFile.write(actionsBlock)
-    return modifiedModel
+#    if writeBNGL:
+#        bngl_model = pysb.export.export(modifiedModel,'bngl')
+#        with open('bnglModelTesting/modifiedModel.bngl','w') as bnglFile:
+#            bnglFile.write(bngl_model)
+#            actionsBlock = addSimParamters('ode',True,['EGF(erbb)'])
+#            bnglFile.write(actionsBlock)
+
+
+    return finalStmts5

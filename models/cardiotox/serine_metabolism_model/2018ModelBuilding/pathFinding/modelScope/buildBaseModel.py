@@ -10,6 +10,15 @@ from indra.sources import trips
 from indra.tools.gene_network import GeneNetwork
 from indra.preassembler import Preassembler
 from indra.util import _require_python3
+from modelContext import enforceCascadeContext as cs
+from modelContext import combinePhosphorylationSites as ptm
+from modelContext import addImplicitMechs as aim
+from indra.assemblers import PysbAssembler
+import pysb
+from addBNGLParameters import addSimParamters
+from addBNGLParameters import addObservables
+from modelContext import extraModelReductionTools as ex
+
 #from util import prefixed_pkl, based, basen
 
 #process_databases.py 
@@ -60,6 +69,7 @@ def cleanStatements(stmts):
     stmts = ac.filter_grounded_only(stmts, save='intermediateStmts/grounded.pkl')
     stmts = ac.filter_genes_only(stmts)
     stmts = ac.filter_human_only(stmts)
+    stmts = ac.filter_direct(stmts)
     stmts = ac.run_preassembly(stmts, save='intermediateStmts/preassembled.pkl')
     stmts = ac.filter_belief(stmts, 0.50)
     stmts = ac.filter_top_level(stmts)
@@ -97,7 +107,7 @@ def cleanStatements(stmts):
 
 model_genes = ['EGF','EGFR','GRB2','SOS1','KRAS','BRAF']
 
-dbStmts = build_prior(model_genes)
+#dbStmts = build_prior(model_genes)
 
 #sp = signor.processor.SignorProcessor()
 #signorStmtsAll = sp.statements
@@ -107,14 +117,14 @@ dbStmts = build_prior(model_genes)
 #trips_stmts = ac.load_statements('model_stmts/trips_output.pkl')
 
 
-stmts = dbStmts #+ signorStmts  
-filteredStmts = ac.filter_gene_list(stmts,model_genes,'all')
+#stmts = dbStmts #+ signorStmts  
+#filteredStmts = ac.filter_gene_list(stmts,model_genes,'all')
 filteredStmts = Preassembler.combine_duplicate_stmts(filteredStmts) 
 
 
 #AT THIS POINT:
-#ac.dump_statements(filteredStmts,'testingModelBuilding.pkl')
-
+#originalStmts = ac.dump_statements(filteredStmts,'testingModelBuilding.pkl')
+originalStmts = ac.load_statements('testingModelBuilding.pkl')
 
 
 ##New filter, because of errors that arrise from none agents
@@ -124,25 +134,62 @@ filteredStmts = Preassembler.combine_duplicate_stmts(filteredStmts)
 # GtpActivation(KRAS(gtpbound), BRAF(), kinase),
 
 stmtTypesToKeep = [Phosphorylation,Dephosphorylation,Activation,Inhibition,ActiveForm,IncreaseAmount,DecreaseAmount,Gef,GtpActivation]#Check sos and raf stmts 
-finalStmts = []
+filteredStmts = []
 for ty in stmtTypesToKeep:
-    finalStmts = finalStmts + ac.filter_by_type(filteredStmts,ty)
+    filteredStmts = filteredStmts + ac.filter_by_type(originalStmts,ty)
 
-ac.dump_statements(finalStmts,'testingModelBuilding.pkl')
+#ac.dump_statements(finalStmts,'testingModelBuilding.pkl')
 
+#In [12]: ac.dump_statements(fname='gefGtpTestStmts.pkl',stmts=gefGtpStmts)
 
 #remove mutants, dimers 
-#modelStmts = cleanStatements(removeNone)
+modelStmts = cleanStatements(filteredStmts)
+
+
+
+#testStmts = ac.load_statements('contextTestStmts.pkl')
+finalStmts = cs.add_all_af(modelStmts)
+finalStmts2 = ptm.coarse_grain_phos(finalStmts)
+finalStmts3 = aim.addAll(finalStmts2)
+finalStmts4 = ex.removeDimers(finalStmts3)
+finalStmts5 = ex.removeMutations(finalStmts4)
+
+#applying active forms to inc/dec ammount, other stmt types?
+#Filtering direct, other preassembly on these?
+
+ac.dump_statements(finalStmts5,'dbModelStmts.pkl')
 
 
 
 
+testStmts = ac.load_statements('contextTestStmts.pkl')
+finalStmts = cs.add_all_af(testStmts)
+finalStmts2 = ptm.coarse_grain_phos(finalStmts)
+finalStmts3 = aim.addAll(finalStmts2)
+finalStmts4 = ex.removeDimers(finalStmts3)
+
+pa = PysbAssembler()
+pa.add_statements(testStmts)
+originalModel = pa.make_model()
+originalModel = addObservables(originalModel,bound=True)
+
+bngl_model = pysb.export.export(originalModel,'bngl')
+with open('bnglModelTesting/originalModel.bngl','w') as bnglFile:
+    bnglFile.write(bngl_model)
+    actionsBlock = addSimParamters('ode',True,['EGF(erbb)'])
+    bnglFile.write(actionsBlock)
 
 
+pa = PysbAssembler()
+pa.add_statements(finalStmts4)
+modifiedModel = pa.make_model()
+modifiedModel = addObservables(modifiedModel,bound=True)
 
-
-
-
+bngl_model = pysb.export.export(modifiedModel,'bngl')
+with open('bnglModelTesting/modifiedModel.bngl','w') as bnglFile:
+    bnglFile.write(bngl_model)
+    actionsBlock = addSimParamters('ode',True,['EGF(erbb)'])
+    bnglFile.write(actionsBlock)
 
 
 

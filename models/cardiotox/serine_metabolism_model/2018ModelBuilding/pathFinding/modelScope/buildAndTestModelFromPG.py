@@ -3,8 +3,8 @@ from indra.assemblers import PysbAssembler
 from indra.assemblers import SifAssembler
 import paths_graph as pg
 from indra.tools import assemble_corpus as ac
-from indra.tools.small_model_tools import enforceCascadeContext as cs
-from indra.tools.small_model_tools import combinePhosphorylationSites as ptm
+from modelContext import enforceCascadeContext as cs
+from modelContext import combinePhosphorylationSites as ptm
 from indra.sources import trips
 from indra.explanation import model_checker
 from indra.preassembler import Preassembler
@@ -12,21 +12,19 @@ import pysb
 from copy import deepcopy
 from indra.statements import * 
 from pick import pick
-from modelContext import addRecContext as rc
 import pysb
-from modelContext import addDephosphorylationAndDegradationRules as add 
 from indra.mechlinker import MechLinker
 from modelScope import indraDB_query as idb
+from modelScope import buildSmallModel as bsm
 
 import logging
-
-logging.getLogger("ac").setLevel(logging.WARNING)
-logging.getLogger("indra").setLevel(logging.WARNING)
 logging.getLogger("assemble_corpus").setLevel(logging.WARNING)
-logging.getLogger("explanation").setLevel(logging.WARNING)
+logging.getLogger("pre_cfpg").setLevel(logging.WARNING)
+logging.getLogger("model_checker").setLevel(logging.WARNING)
 logging.getLogger("paths_graph").setLevel(logging.WARNING)
-logging.getLogger("indra/pre_cfpg").setLevel(logging.WARNING)
-
+logging.getLogger("grounding_mapper").setLevel(logging.WARNING)
+logging.getLogger("preassembler").setLevel(logging.WARNING)
+logging.getLogger("pysb_assembler").setLevel(logging.WARNING)
 
 #TODO:
 #check sif direction, if lines are going in both direction for complex, may make things difficult
@@ -35,30 +33,42 @@ logging.getLogger("indra/pre_cfpg").setLevel(logging.WARNING)
 #Build sif file
 def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
 
-    #add rule context changes
-    newstmts, uplist, downlist = cs.add_all_af(stmts)     
-    newstmts = cs.run_mechlinker_step_reduced(newstmts, uplist, downlist)
-    prelimSmallStmts_contextChanges = ptm.coarse_grain_phos(newstmts)
-    prelimSmallStmts_contextChanges = Preassembler.combine_duplicate_stmts(prelimSmallStmts_contextChanges)
+#    #add rule context changes
+#    finalStmts = cs.add_all_af(stmts)
+#    finalStmts = cs.reduce_complex_activeforms(finalStmts)
+#    mlStmts = cs.run_mechlinker_step_reduced(finalStmts)
 
-    #add prespecified drug stmts
+#    prelimSmallStmts_contextChanges = ptm.coarse_grain_phos(mlStmts)
+#    prelimSmallStmts_contextChanges = Preassembler.combine_duplicate_stmts(prelimSmallStmts_contextChanges)
+
+#    #add prespecified drug stmts
+#    finalSorafStmts = ac.load_statements('finalSorafStmts_reduced.pkl')
+#    finalStmts = prelimSmallStmts_contextChanges + finalSorafStmts
+
+#    #Need to handle receptor active forms and ligand binding/phosphorylations specially, want to better incorporate this into cs/ptm code eventually
+##    recList = ['PDGFRA','FLT3','KDR']
+##    newRecPhosStmts = rc.fixRecPhosContext(recList,finalStmts)
+##    finalStmts = finalStmts + newRecPhosStmts    
+
+#    #need corresponding dephosphorylation and degredation for any phosphorylation and transcription if not present in stmt set
+#    finalStmts = add.add_dephosphorylations(finalStmts) 
+#    finalStmts = add.add_degradations(finalStmts)
+
+#    #replace activations if possible, removes unnecessary site and improve context logic
+#    ml = MechLinker(finalStmts)
+#    ml.replace_activations()    #Check here
+#    finalStmts = ml.statements  
+#    #finalStmts = ac.map_grounding(finalStmts)
+
+
+
+    modelStmts = bsm.buildSmallModel(stmts)
     finalSorafStmts = ac.load_statements('finalSorafStmts_reduced.pkl')
-    finalStmts = prelimSmallStmts_contextChanges + finalSorafStmts
+    finalStmts = modelStmts + finalSorafStmts
 
-    #Need to handle receptor active forms and ligand binding/phosphorylations specially, want to better incorporate this into cs/ptm code eventually
-    recList = ['PDGFRA','FLT3','KDR']
-    newRecPhosStmts = rc.fixRecPhosContext(recList,finalStmts)
-    finalStmts = finalStmts + newRecPhosStmts    
 
-    #need corresponding dephosphorylation and degredation for any phosphorylation and transcription if not present in stmt set
-    finalStmts = add.add_dephosphorylations(finalStmts)
-    finalStmts = add.add_degradations(finalStmts)
 
-    #replace activations if possible, removes unnecessary site and improve context logic
-    ml = MechLinker(finalStmts)
-    ml.replace_activations()
-    finalStmts = ml.statements  
-    finalStmts = ac.map_grounding(finalStmts)
+
 
     #build sif graph 
     sa = SifAssembler(finalStmts)
@@ -72,7 +82,7 @@ def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
     #For pg: 0 = positive, 1 = negative
     #In raw sif: 1 = positive, 0 = neutral, -1 = negative
     #below, keeping 0 the same turns neutral to positive. Is this best rule of thumb?
-    for line in sifModelText:
+    for line in sifModelText:       #check here
         if ' 1 ' in line:
             newline = line.replace(' 1 ', ' 0 ')
         elif ' -1 ' in line:
@@ -124,16 +134,13 @@ def buildModel(paths,stmts,nodes=None,save=False,fn='./modelStmts.pkl'):
         uniqueNodes = uniqueNodes + nodes
     print('Nodes for final model are %s' % uniqueNodes)
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
-    modelStmts = ac.map_grounding(modelStmts)
+    #modelStmts = ac.map_grounding(modelStmts)      #check here
 
     if save:
         ac.dump_statements(modelStmts,fn)
 
-    modelStmts = Preassembler.combine_duplicate_stmts(modelStmts)
-    #FIX THIS BETTER SOMEHOW> FIGURE OUT WHERE ITS COMING FROM
-    for st in modelStmts:
-        if len(st.agent_list()) > 2:
-             st.agent_list()[2:] = []
+    modelStmts = Preassembler.combine_duplicate_stmts(modelStmts)   #check here
+
 
     pa = PysbAssembler()
     pa.add_statements(modelStmts)
@@ -149,7 +156,7 @@ def testExpStmt(model,sentences): #take in statements? Sentences?
 #    #may try to allow stmts or sentences, either through two input variables, or detecting type.
     tp = trips.process_text(sentences)
     testStmts = tp.statements
-    testStmts = ac.map_grounding(testStmts)
+#    testStmts = ac.map_grounding(testStmts)
 
     mc = model_checker.ModelChecker(model=model,statements=testStmts)
     results = mc.check_model(max_path_length=8)
@@ -172,33 +179,34 @@ def runModelCheckingRoutine(stmts,drug,nodeToExplain,sentences):
         modelStmts = None
     return passResult, modelStmts
 
-def findActiveForm(node):
+def findActiveForm(node,currentNodes):
+    newAFStmt = None
     #find all non-mutation active forms for newly added node 
     stmtsDB_AF = idb.queryDB_nonmod(node,'activeform')
     stmtsDB_AF = remove_mutations(stmtsDB_AF)
+    stmtsDB_AF = [st for st in stmtsDB_AF if st.is_active]
 
     #provide list of af's to follow up on?
     #Ideally, check for a bound condition, and see if binder is in model already. If not, check for phos. If neither...
     #Will rework this whole section in the futre
-#    newAFStmts = []
+
     for st in stmtsDB_AF:
-#                    bound_names = []
-#                    if st.agent.bound_conditions:
-#                        bound_names.append(st.stmts[-1].agent_list_with_bound_condition_agents())
-#                    elif st.agent.mods:
-        if st.agent.mods:
+
+        if st.agent.bound_conditions:
+            boundName = newAF[-1].agent.bound_conditions[0].agent.name
+            if boundName in currentNodes:
+                newAFStmt = st
+        elif st.agent.mods:
             if st.agent.mods[0].mod_type == 'phosphorylation':  
-                if st.is_active == True:
-                    newMod = 'phosphorylation'    
-                    #Later, filter and feedback instead of generalizing   
-                    st_general = deepcopy(st)
-                    st_general.agent.mods[0].res = None    
-                    st_general.agent.mods[0].pos = None     
-                    st_general.agent.mods[0].residue = None    
-                    st_general.agent.mods[0].position = None       
-#                            st_general.agent.mods[0].is_active = True
-                    newAFStmt = st_general       #Make sure to take a stmt where is_active=True
-                    break
+
+                newMod = 'phosphorylation'    
+                #Later, filter and feedback instead of generalizing   
+                st_general = deepcopy(st)
+                st_general.agent.mods[0].residue = None    
+                st_general.agent.mods[0].position = None       
+
+                newAFStmt = st_general       #Make sure to take a stmt where is_active=True
+                break
 
     return newAFStmt
 
@@ -250,22 +258,17 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
             while found == 0:
                 #search for potential nodes and stmts to add to the model 
                 stmtsDB = idb.queryDB(nodeToExplain,modToExplain)
-                stmtsDB = remove_mutations(stmtsDB)
                 #identify all new nodes that are candidates for the model 
                 candidateNodes = idb.getCandidateNodes(stmtsDB)
-                #candidateNodes = [el for el in candidateNodes if el not in currentNodes]
                 candidateNodes = list(set(candidateNodes))
-                targetNodes = []
-                for nd in candidateNodes:
-                    if nd in drugTargets:
-                        targetNodes.append(nd)
 
+                targetNodes = [nd for nd in candidateNodes if nd in drugTargets]    #Want to ensure any drug targets are in the potential node list, they are included before the cut off
                 if len(candidateNodes) >= 20:
                     candidateNodes = candidateNodes[:21] + targetNodes
                 #Add exit point
                 candidateNodes.append('exit')
 
-                #Test adding each new node, and all of it's associated stmts to the model 
+                #Test adding each new node, and all of it's
                 #See if model passes model checker test with any added node 
                 #Could get around slowness of adding lots of nodes by adding one node at a time, then testing.  But then could potentially run the test many, many times 
                 for node in candidateNodes:
@@ -290,12 +293,12 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
                     if proteinOptions:
                         option,index = pick(proteinOptions,title,indicator='=>',default_index=0)    #This really sucks
                     else:
-                        option = nodes[1]   #This doesn't seem right 
+                        option = currentNodes[-2]   
 
                     #specify stmts, nodes, mods for next loop iteration
                     #This finds all relevant statements returned by DB for the new node. Will often be one, but should likely limit to one carefully selected statement
                     stmtsForNewNode = ac.filter_gene_list(stmtsDB,option,'one')  
-                    newAFStmt = findActiveForm(option)                   
+                    newAFStmt = findActiveForm(option,currentNodes)                   
                     currentStmts = currentStmts + stmtsForNewNode + [newAFStmt]
                     currentNodes.append(option)
 
@@ -333,7 +336,7 @@ nodes = ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC','PDGFRA','KDR','PDGF',
 large_model_stmts = ac.filter_gene_list(large_model_stmts,nodes,'all')
 
 
-expObservations = {'RPS6':['phosphorylation','SORAFENIB dephosphorylates RPS6'],'PKM':['phosphorylation','SORAFENIB phosphorylates PKM']} #,'AURKA':['phosphorylation','SORAFENIB phosphorylates AURKA'],'HIF1A':['increaseamount','SORAFENIB transcribes HIF1A'],'MYC':['increaseamount','SORAFENIB transcribes MYC'],'JUN':['phosphorylation','SORAFENIB phosphorylates JUN']}#,'STAT1':['phosphorylation','SORAFENIB phosphorylates STAT1']}#,'PDGFRA':'increased'}
+expObservations = {'RPS6':['phosphorylation','SORAFENIB dephosphorylates RPS6']}#,'PKM':['phosphorylation','SORAFENIB phosphorylates PKM']} #,'AURKA':['phosphorylation','SORAFENIB phosphorylates AURKA'],'HIF1A':['increaseamount','SORAFENIB transcribes HIF1A'],'MYC':['increaseamount','SORAFENIB transcribes MYC'],'JUN':['phosphorylation','SORAFENIB phosphorylates JUN']}#,'STAT1':['phosphorylation','SORAFENIB phosphorylates STAT1']}#,'PDGFRA':'increased'}
 
 
 finalStmts = expandModel(expObservations,'SORAFENIB',['FLT3','KDR','PDGFRA'],initialStmts=large_model_stmts,initialNodes=nodes)
