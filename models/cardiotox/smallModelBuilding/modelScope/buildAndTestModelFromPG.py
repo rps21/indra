@@ -132,7 +132,7 @@ def buildModel(paths,stmts,nodes=None,save=False,fn='./modelStmts.pkl'):
     uniqueNodes = uniqueNodes + ligands
     if nodes:
         uniqueNodes = uniqueNodes + nodes
-    print('Nodes for final model are %s' % uniqueNodes)
+    #print('Nodes for final model are %s' % uniqueNodes)
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
     #modelStmts = ac.map_grounding(modelStmts)      #check here
 
@@ -151,12 +151,12 @@ def buildModel(paths,stmts,nodes=None,save=False,fn='./modelStmts.pkl'):
 ##########################
 #Test experimental findings against candidate model
 
-def testExpStmt(model,sentences): #take in statements? Sentences?
+def testExpStmt(model,expStmt): #take in statements? Sentences?
 
 #    #may try to allow stmts or sentences, either through two input variables, or detecting type.
-    tp = trips.process_text(sentences)
-    testStmts = tp.statements
-#    testStmts = ac.map_grounding(testStmts)
+#    tp = trips.process_text(sentences)
+#    testStmts = tp.statementsPySB_Model,sentences
+    testStmts = [expStmt]
 
     mc = model_checker.ModelChecker(model=model,statements=testStmts)
     results = mc.check_model(max_path_length=8)
@@ -167,12 +167,12 @@ def testExpStmt(model,sentences): #take in statements? Sentences?
 
 
 #drug targets and cogante ligands are build into funtions. These should be pulled out and made input variables. 
-def runModelCheckingRoutine(stmts,drug,nodeToExplain,sentences):
+def runModelCheckingRoutine(stmts,drug,nodeToExplain,expStmts):
     fn, contextStmts = buildDirectedSif(stmts)
     paths = findPaths(fn,drug,nodeToExplain,8)
     if paths:
         PySB_Model,modelStmts = buildModel(paths,contextStmts)
-        results, mc = testExpStmt(PySB_Model,sentences)
+        results, mc = testExpStmt(PySB_Model,expStmts)
         passResult = results[0][1].path_found
     else:
         passResult = None
@@ -247,8 +247,8 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
         finalNode = key
         nodeToExplain = key
         modToExplain = expObservations[key][0]
-        sentence = expObservations[key][1]
-        passResult, modelStmts = runModelCheckingRoutine(currentStmts,drug,nodeToExplain,sentence)
+        expStmt = expObservations[key][1]
+        passResult, modelStmts = runModelCheckingRoutine(currentStmts,drug,nodeToExplain,expStmt)
 
         #Model doesn't satisfy condition, go searching for statements to add to model 
         if passResult:
@@ -273,15 +273,18 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
                 #Could get around slowness of adding lots of nodes by adding one node at a time, then testing.  But then could potentially run the test many, many times 
                 for node in candidateNodes:
                     currentNodes.append(node)
+                    print('Testing new node %s' % node)
                     testStmts = ac.filter_gene_list(currentStmts,currentNodes,'all') + ac.filter_gene_list(stmtsDB,node,'one')  
+                    #print(ac.filter_gene_list(stmtsDB,node,'one') )
 #                    passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,nodeToExplain,sentence)      
-                    passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,sentence)      
+                    passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,expStmt)      
                     if passResult:
                         found = 1
                         finalStmts = finalStmts + modelStmts
                         print('Worked!')
                         break
                     else:
+                    
                         currentNodes.pop()    #Is this necessary?
 
                 #If no single node satisfies condition, pick one node to add to model. 
@@ -332,192 +335,53 @@ for st in stmts:
         large_model_stmts.append(st)
         app=0
 
-nodes = ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC','PDGFRA','KDR','PDGF','FLT3LG','PDGFA','SORAFENIB','GenericPhosphatase']
+nodes = ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC','PDGFRA','KDR','PDGF','FLT3LG','PDGFA','SORAFENIB','GenericPhosphatase','SRC']
 large_model_stmts = ac.filter_gene_list(large_model_stmts,nodes,'all')
 
+stmtTypesToKeep = [Phosphorylation,Dephosphorylation,ActiveForm,IncreaseAmount,DecreaseAmount,Gef,GtpActivation]#Check sos and raf stmts 
+filteredStmts = []
+for ty in stmtTypesToKeep:
+    filteredStmts = filteredStmts + ac.filter_by_type(large_model_stmts,ty)
 
-expObservations = {'RPS6':['phosphorylation','SORAFENIB dephosphorylates RPS6']}#,'PKM':['phosphorylation','SORAFENIB phosphorylates PKM']} #,'AURKA':['phosphorylation','SORAFENIB phosphorylates AURKA'],'HIF1A':['increaseamount','SORAFENIB transcribes HIF1A'],'MYC':['increaseamount','SORAFENIB transcribes MYC'],'JUN':['phosphorylation','SORAFENIB phosphorylates JUN']}#,'STAT1':['phosphorylation','SORAFENIB phosphorylates STAT1']}#,'PDGFRA':'increased'}
+
+
+
+#'SORAFENIB dephosphorylates RPS6'
+stType = Dephosphorylation
+ag1 = Agent('SORAFENIB')
+ag2 = Agent('RPS6')
+ag1.db_refs = {'CHEBI': 'CHEBI:50924', 'PUBCHEM': '216239', 'TEXT': 'sorafenib'}
+from indra.databases import hgnc_client
+hgnc_id = hgnc_client.get_hgnc_id('RPS6')
+if hgnc_id:
+    ag2.db_refs['HGNC'] = hgnc_id
+standard_up_id = hgnc_client.get_uniprot_id(hgnc_id)
+if standard_up_id:
+    ag2.db_refs['UP'] = standard_up_id
+expStmt1 = stType(ag1,ag2)
+
+
+stType = Phosphorylation
+ag1 = Agent('SORAFENIB')
+ag2 = Agent('PKM')
+ag1.db_refs = {'CHEBI': 'CHEBI:50924', 'PUBCHEM': '216239', 'TEXT': 'sorafenib'}
+from indra.databases import hgnc_client
+hgnc_id = hgnc_client.get_hgnc_id('PKM')
+if hgnc_id:
+    ag2.db_refs['HGNC'] = hgnc_id
+standard_up_id = hgnc_client.get_uniprot_id(hgnc_id)
+if standard_up_id:
+    ag2.db_refs['UP'] = standard_up_id
+expStmt2 = stType(ag1,ag2)
+
+
+#expObservations = {'RPS6':['phosphorylation',expStmt1],'PKM':['phosphorylation',expStmt2]}
+expObservations = {'PKM':['phosphorylation',expStmt2]}
+
+#expObservations = {'RPS6':['phosphorylation','SORAFENIB dephosphorylates RPS6']}#,'PKM':['phosphorylation','SORAFENIB phosphorylates PKM']} #,'AURKA':['phosphorylation','SORAFENIB phosphorylates AURKA'],'HIF1A':['increaseamount','SORAFENIB transcribes HIF1A'],'MYC':['increaseamount','SORAFENIB transcribes MYC'],'JUN':['phosphorylation','SORAFENIB phosphorylates JUN']}#,'STAT1':['phosphorylation','SORAFENIB phosphorylates STAT1']}#,'PDGFRA':'increased'}
 
 
 finalStmts = expandModel(expObservations,'SORAFENIB',['FLT3','KDR','PDGFRA'],initialStmts=large_model_stmts,initialNodes=nodes)
-
-
-
-#key='RPS6'
-#paths1 = findPaths(sifFile,'SORAFENIB',key,8)  #checking against original node in question instead
-##model, stmts_to_test = buildModel(paths,contextStmts,nodes,save=True,fn='./modelStmts_paths.pkl')
-##sentence = effectType[key][1]
-##results, mc = testExpStmt(model,sentence)   #PROBLEM: checking partial model, based on paths to current, not final node, against sentence referencing final node. 
-
-#key = 'PKM'
-#paths2 = findPaths(sifFile,'SORAFENIB',key,8)  #checking against original node in question instead
-##model, stmts_to_test = buildModel(paths,contextStmts,nodes,save=True,fn='./modelStmts_paths.pkl')
-##sentence = effectType[key][1]
-##results, mc = testExpStmt(model,sentence)   #PROBLEM: checking partial model, based on paths to current, not final node, against sentence referencing final node. 
-
-#key = 'HIF1A'
-#paths3 = findPaths(sifFile,'SORAFENIB',key,8)  #checking against original node in question instead
-##model, stmts_to_test = buildModel(paths,contextStmts,nodes,save=True,fn='./modelStmts_paths.pkl')
-##sentence = effectType[key][1]
-##results, mc = testExpStmt(model,sentence)   #PROBLEM: checking partial model, based on paths to current, not final node, against sentence referencing final node. 
-
-
-#paths = paths1+paths2+paths3
-#model, reducedFinalStmts = buildModel(paths,newContextStmts,nodes,save=True,fn='./modelStmts_paths.pkl')
-
-
-#ac.dump_statements(reducedFinalStmts,'reducedPpotentialFinalGroupMeetingStmts.pkl')
-
-#bngl_model = pysb.export.export(PySB_Model,'bngl')
-#with open('final_bngl_model_NEW_NEW_NEW.bngl','w') as f:
-#    f.write(bngl_model)
-
-
-
-
-
-#######################################33
-#OLD CODE
-
-
-
-
-
-#finalModelStmts = []
-#finalStmts = []
-#for key in expObservations:
-#    paths = None
-#    results = None
-#    passResult = None
-#    finalModelStmts = finalModelStmts + finalStmts
-#    currentNode = key 
-#    if finalModelStmts:
-#        firstModel = finalModelStmts
-#    else:
-#        firstModel = ac.filter_gene_list(large_model_stmts,nodes,'all') 
-
-#    #First check: is there a path between nodes 
-#    sifFile,contextStmts = buildDirectedSif(firstModel,save=True,fn='./directedSifFile.sif')
-#    paths = findPaths(sifFile,'SORAFENIB',key,8)  
-#    
-#    #second check, can this path satisfy the mechanism of interest 
-#    #10 paths of length 8 for now. This should result in a fairly big/complete model if we're dealing with a small set of base statements
-#    if paths:
-#        model, stmts_to_test = buildModel(paths,contextStmts,save=True,fn='./modelStmts.pkl')
-#        sentence = expObservations[key][1]
-#        results, mc = testExpStmt(model,sentence)
-#        passResult = results[0][1].path_found
-#    else:
-#        passResult = False
-
-    
-
-
-
-#    effect_tmp = {key:effectType[key] for key in [key]} #this is such a stupid way of doing things, i shouldn't be making/passing entire dict 
-#    effect_tmp[key] = effect_tmp[key][0]
-
-#    #Model doesn't satisfy condition, go searching for statements to add to model 
-#    if not passResult:
-#        found = 0
-#        newNodes = []
-#        newStmts = []
-#        pastNodes = []
-#        allMechs = ''
-
-#        nodeToExplain = key
-#        modToExplain = effectType[key]
-
-#        while found == 0:
-
-
-
-#            stmtsDB = idb.queryDB(nodeToExplain,modToExplain)
-#            stmtsDB = remove_mutations(stmtsDB)
-#            candidateNodes = idb.getCandidateNodes(stmtsDB)
-#            #Here, will have a new set of candidate nodes 
-
-#            #identify all new nodes that are candidates for the model 
-#            candidateNodes = [el for el in candidateNodes if el not in pastNodes]
-#            candidateNodes = list(set(candidateNodes))
-
-
-#            #Could get around slowness of adding lots of nodes by adding one node at a time, then testing.  But then could potentially run the test many, many times 
-#            modelNodes = nodes+newNodes
-#            if len(candidateNodes) >= 20:
-##                candidateNodes = candidateNodes[:21]
-
-#            #Can I filter by nodes in model first, and only test with those?
-#            #honestly, may not be entirely necessary, but helps automation and enforcing smallness of model by identifying first possible solution
-#            for node in candidateNodes:
-#                modelNodes.append(node)
-#                modelStmts = ac.filter_gene_list(large_model_stmts,modelNodes,'all') + ac.filter_gene_list(stmtsDB,node,'one') + newStmts + finalModelStmts                                                                             
-#                sifFile,contextStmts = buildDirectedSif(modelStmts,save=True,fn='./directedSifFile.sif') 
-##                ac.dump_statements(contextStmts,'./modelStmts_paths.pkl')
-
-#                paths = findPaths(sifFile,'SORAFENIB',finalNode,8)  #checking against original node in question instead
-#                if paths:
-#                    model, stmts_to_test = buildModel(paths,contextStmts,nodes,save=True,fn='./modelStmts_paths.pkl')
-#                    results, mc = testExpStmt(model,sentence)   #PROBLEM: checking partial model, based on paths to current, not final node, against sentence referencing final node. 
-#                    passResult = results[0][1].path_found
-#                    if passResult:
-#                        found = 1
-#                        newNodes.append(node)   #unsure if I need this, can't hurt but may look sloppy to have repeated nodes in final list 
-#                        finalStmts = modelStmts
-#                        print('Worked!')
-#                        break
-#                    else:
-#                        modelNodes.pop()    #Is this necessary?
-
-
-#            if found == 0:
-#                finalStmts = []
-#                #allow user to pick node for next iteration. Following all nodes will result in a combinatorial explosion
-#                #maybe try to add more info for the user here, sentence of interest, previous node[s]
-#                proteinOptions = candidateNodes
-#                title = 'Pick the protein to follow up on, for %s on %s' % (modToExplain,nodeToExplain)
-#                allMechs = allMechs + '\n' + title
-#                if proteinOptions:
-#                    option,index = pick(proteinOptions,allMechs,indicator='=>',default_index=0)    #This really sucks
-#                else:
-#                    option = nodes[1]   #This doesn't seem right 
-
-#                newStmts = newStmts + ac.filter_gene_list(stmtsDB,option,'one')  
-#                stmtsDB_AF = idb.queryDB_nonmod(option,'activeform')
-#                stmtsDB_AF = remove_mutations(stmtsDB_AF)
-#                #provide list of af's to follow up on?
-#                #Ideally, check for a bound condition, and see if binder is in model already. If not, check for phos. If neither...
-
-#                newAFStmts = []
-#                for st in stmtsDB_AF:
-##                    bound_names = []
-##                    if st.agent.bound_conditions:
-##                        bound_names.append(st.stmts[-1].agent_list_with_bound_condition_agents())
-##                    elif st.agent.mods:
-#                    if st.agent.mods:
-#                        if st.agent.mods[0].mod_type == 'phosphorylation':  
-#                            if st.is_active == True:
-#                                newMod = 'phosphorylation'    
-#                                #Later, filter and feedback instead of generalizing   
-#                                st_general = deepcopy(st)
-#                                st_general.agent.mods[0].res = None    
-#                                st_general.agent.mods[0].pos = None     
-#                                st_general.agent.mods[0].residue = None    
-#                                st_general.agent.mods[0].position = None       
-#    #                            st_general.agent.mods[0].is_active = True
-#                                newAFStmts.append(st_general)       #Make sure to take a stmt where is_active=True
-#                                break
-
-
-#                newStmts = newStmts + newAFStmts
-#                newNodes.append(option)
-#                nodeToExplain = option 
-#                modToExplain = 'phosphorylation' #This need to be fixed/generalized
-
-#    nodes = nodes + newNodes
-
-
-
 
 
 

@@ -181,14 +181,14 @@ with open('bnglModelTesting/originalModel.bngl','w') as bnglFile:
 
 
 pa = PysbAssembler()
-pa.add_statements(finalStmts4)
+pa.add_statements(finalStmts)
 modifiedModel = pa.make_model()
 modifiedModel = addObservables(modifiedModel,bound=True)
 
 bngl_model = pysb.export.export(modifiedModel,'bngl')
-with open('bnglModelTesting/modifiedModel.bngl','w') as bnglFile:
+with open('bnglModelTesting/modifiedModel_3obs.bngl','w') as bnglFile:
     bnglFile.write(bngl_model)
-    actionsBlock = addSimParamters('ode',True,['EGF(erbb)'])
+    actionsBlock = addSimParamters('ode',True,['Sorafenib()'])
     bnglFile.write(actionsBlock)
 
 
