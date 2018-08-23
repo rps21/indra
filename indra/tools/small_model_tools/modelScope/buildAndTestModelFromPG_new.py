@@ -1,21 +1,18 @@
-
+from copy import deepcopy
+from pick import pick
+from indra.statements import * 
+from indra.mechlinker import MechLinker
+from indra.preassembler import Preassembler
 from indra.assemblers import PysbAssembler
 from indra.assemblers import SifAssembler
 import paths_graph as pg
+from indra.explanation import model_checker
 from indra.tools import assemble_corpus as ac
 from modelContext import enforceCascadeContext as cs
 from modelContext import combinePhosphorylationSites as ptm
-from indra.sources import trips
-from indra.explanation import model_checker
-from indra.preassembler import Preassembler
-import pysb
-from copy import deepcopy
-from indra.statements import * 
-from pick import pick
-import pysb
-from indra.mechlinker import MechLinker
 from modelScope import indraDB_query as idb
 from modelScope import buildSmallModel as bsm
+import pysb
 
 import logging
 logging.getLogger("assemble_corpus").setLevel(logging.WARNING)
@@ -27,48 +24,14 @@ logging.getLogger("preassembler").setLevel(logging.WARNING)
 logging.getLogger("pysb_assembler").setLevel(logging.WARNING)
 
 #TODO:
-#check sif direction, if lines are going in both direction for complex, may make things difficult
-#make file writing mandatory in sif generation. Decide if want to rm tmp intermediate file
 
 #Build sif file
 def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
 
-#    #add rule context changes
-#    finalStmts = cs.add_all_af(stmts)
-#    finalStmts = cs.reduce_complex_activeforms(finalStmts)
-#    mlStmts = cs.run_mechlinker_step_reduced(finalStmts)
-
-#    prelimSmallStmts_contextChanges = ptm.coarse_grain_phos(mlStmts)
-#    prelimSmallStmts_contextChanges = Preassembler.combine_duplicate_stmts(prelimSmallStmts_contextChanges)
-
-#    #add prespecified drug stmts
-#    finalSorafStmts = ac.load_statements('finalSorafStmts_reduced.pkl')
-#    finalStmts = prelimSmallStmts_contextChanges + finalSorafStmts
-
-#    #Need to handle receptor active forms and ligand binding/phosphorylations specially, want to better incorporate this into cs/ptm code eventually
-##    recList = ['PDGFRA','FLT3','KDR']
-##    newRecPhosStmts = rc.fixRecPhosContext(recList,finalStmts)
-##    finalStmts = finalStmts + newRecPhosStmts    
-
-#    #need corresponding dephosphorylation and degredation for any phosphorylation and transcription if not present in stmt set
-#    finalStmts = add.add_dephosphorylations(finalStmts) 
-#    finalStmts = add.add_degradations(finalStmts)
-
-#    #replace activations if possible, removes unnecessary site and improve context logic
-#    ml = MechLinker(finalStmts)
-#    ml.replace_activations()    #Check here
-#    finalStmts = ml.statements  
-#    #finalStmts = ac.map_grounding(finalStmts)
-
-
-
+    #Apply small model simplification to list of statements 
     modelStmts = bsm.buildSmallModel(stmts)
     finalSorafStmts = ac.load_statements('finalSorafStmts_reduced.pkl')
     finalStmts = modelStmts + finalSorafStmts
-
-
-
-
 
     #build sif graph 
     sa = SifAssembler(finalStmts)
