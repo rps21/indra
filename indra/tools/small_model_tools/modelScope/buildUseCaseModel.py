@@ -8,10 +8,10 @@ from indra.assemblers import SifAssembler
 import paths_graph as pg
 from indra.explanation import model_checker
 from indra.tools import assemble_corpus as ac
-from modelContext import enforceCascadeContext as cs
-from modelContext import combinePhosphorylationSites as ptm
-from modelScope import indraDB_query as idb
-from modelScope import buildSmallModel as bsm
+#from modelContext import enforceCascadeContext as cs
+#from modelContext import combinePhosphorylationSites as ptm
+from indra.tools.small_model_tools.modelScope import indraDB_query as idb
+from indra.tools.small_model_tools.modelContext import buildSmallModel as bsm
 import pysb
 
 import logging
@@ -24,17 +24,21 @@ logging.getLogger("preassembler").setLevel(logging.WARNING)
 logging.getLogger("pysb_assembler").setLevel(logging.WARNING)
 
 #TODO:
+#Remove unused mods that exist on stmts, ex: Complex(HIF1A(mods: (sumoylation, phos_act)), MYC(mods: (ubiquitination, phos_act))),
+#Look for bugs in phosphorylation sites being generated.
+
+
 
 #Build sif file
 def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
 
     #Apply small model simplification to list of statements 
     modelStmts = bsm.buildSmallModel(stmts)
-    finalSorafStmts = ac.load_statements('finalSorafStmts_reduced.pkl')
-    finalStmts = modelStmts + finalSorafStmts
+#    finalSorafStmts = ac.load_statements('finalSorafStmts_reduced.pkl')
+#    finalStmts = modelStmts + finalSorafStmts
 
     #build sif graph 
-    sa = SifAssembler(finalStmts)
+    sa = SifAssembler(modelStmts)
     sifModel = sa.make_model(use_name_as_key=True, include_mods=True,include_complexes=True)
     directedSifModel = sa.print_model(include_unsigned_edges=True)
     sa.save_model(fname='./rawSif_tmp.sif',include_unsigned_edges=True)
@@ -59,7 +63,7 @@ def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
             for line in newSifModelText:
                 f.write(line)
 
-    return fn, finalStmts
+    return fn, modelStmts
 
 
 #######################
@@ -89,12 +93,11 @@ def buildModel(paths,stmts,nodes=None,save=False,fn='./modelStmts.pkl'):
         uniqueNodes = uniqueNodes + [el for el in list(path) if el not in uniqueNodes]
 
     #Major bug in model building - fails if no ligand 
-    #Need to handle this better, but for now just add relevant ligands
-    #Also need drug and newly added phosphatase in the final model, not sure best place to add that, here for now 
-    ligands = ['PDGF','FLT3LG','PDGFA','SORAFENIB','GenericPhosphatase']
-    uniqueNodes = uniqueNodes + ligands
-    if nodes:
-        uniqueNodes = uniqueNodes + nodes
+#    #Need to handle this better, but for now just add relevant ligands
+#    #Also need drug and newly added phosphatase in the final model, not sure best place to add that, here for now 
+#    ligands = ['PDGF','FLT3LG','PDGFA','SORAFENIB','GenericPhosphatase']
+#    uniqueNodes = uniqueNodes + ligands
+
     #print('Nodes for final model are %s' % uniqueNodes)
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
 
@@ -113,20 +116,13 @@ def buildModel(paths,stmts,nodes=None,save=False,fn='./modelStmts.pkl'):
 
 ##########################
 #Test experimental findings against candidate model
-
 def testExpStmt(model,expStmt): #take in statements? Sentences?
 
-#    #may try to allow stmts or sentences, either through two input variables, or detecting type.
-#    tp = trips.process_text(sentences)
-#    testStmts = tp.statementsPySB_Model,sentences
     testStmts = [expStmt]
-
     mc = model_checker.ModelChecker(model=model,statements=testStmts)
     results = mc.check_model(max_path_length=8)
 
     return results, mc
-#    results[0][1].path_found #True or False [0] index means first tuple, one tuple per sentence checking. [1] is the part of a tuple with failure/success result. 
-###########################
 
 
 #drug targets and cogante ligands are build into funtions. These should be pulled out and made input variables. 
@@ -141,6 +137,15 @@ def runModelCheckingRoutine(stmts,drug,nodeToExplain,expStmts):
         passResult = None
         modelStmts = None
     return passResult, modelStmts
+
+###########################
+
+
+
+
+
+
+
 
 def findActiveForm(node,currentNodes):
     newAFStmt = None
@@ -280,82 +285,9 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
 
 
 ############
-#TESTING
-#load large set of statements, do some messy filtering. 
-#Gives a basis to start model building, may not be entirely necessary
-#should extend to have the option of starting with some set of statements, or starting from scratch
-#Eventually move this to a cardiotox-specific file and just save the filtered statements as the starting point. 
-prelimStmts = ac.load_statements('largeModelStmts.pkl') 
-stmts = ac.filter_by_type(prelimStmts,Activation)+ac.filter_by_type(prelimStmts,ActiveForm)+ac.filter_by_type(prelimStmts,Phosphorylation) + ac.filter_by_type(prelimStmts,Dephosphorylation) + ac.filter_by_type(prelimStmts,IncreaseAmount)+ac.filter_by_type(prelimStmts,DecreaseAmount) + ac.filter_by_type(prelimStmts,Complex)
-
-large_model_stmts = []
-for st in stmts:
-    app=1
-    for ag in st.agent_list():
-        for mod in ag.mods:
-            if (mod.mod_type=='sumoylation' or mod.mod_type=='acetylation' or mod.mod_type=='ubiquitination'):
-                app = 0 
-    if app == 1:
-        large_model_stmts.append(st)
-        app=0
-
-nodes = ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC','PDGFRA','KDR','PDGF','FLT3LG','PDGFA','SORAFENIB','GenericPhosphatase','SRC']
-large_model_stmts = ac.filter_gene_list(large_model_stmts,nodes,'all')
 
 
-stmtTypesToKeep = [Phosphorylation,Dephosphorylation,ActiveForm,IncreaseAmount,DecreaseAmount,Gef,GtpActivation,Complex]#Check sos and raf stmts 
-filteredStmts = []
-for ty in stmtTypesToKeep:
-    filteredStmts = filteredStmts + ac.filter_by_type(large_model_stmts,ty)
 
-
-#'SORAFENIB dephosphorylates RPS6'
-stType = Dephosphorylation
-ag1 = Agent('SORAFENIB')
-ag2 = Agent('RPS6')
-ag1.db_refs = {'CHEBI': 'CHEBI:50924', 'PUBCHEM': '216239', 'TEXT': 'sorafenib'}
-from indra.databases import hgnc_client
-hgnc_id = hgnc_client.get_hgnc_id('RPS6')
-if hgnc_id:
-    ag2.db_refs['HGNC'] = hgnc_id
-standard_up_id = hgnc_client.get_uniprot_id(hgnc_id)
-if standard_up_id:
-    ag2.db_refs['UP'] = standard_up_id
-expStmt1 = stType(ag1,ag2)
-
-
-stType = Phosphorylation
-ag1 = Agent('SORAFENIB')
-ag2 = Agent('PKM')
-ag1.db_refs = {'CHEBI': 'CHEBI:50924', 'PUBCHEM': '216239', 'TEXT': 'sorafenib'}
-from indra.databases import hgnc_client
-hgnc_id = hgnc_client.get_hgnc_id('PKM')
-if hgnc_id:
-    ag2.db_refs['HGNC'] = hgnc_id
-standard_up_id = hgnc_client.get_uniprot_id(hgnc_id)
-if standard_up_id:
-    ag2.db_refs['UP'] = standard_up_id
-expStmt2 = stType(ag1,ag2)
-
-
-stType = IncreaseAmount
-ag1 = Agent('SORAFENIB')
-ag2 = Agent('HIF1A')
-ag1.db_refs = {'CHEBI': 'CHEBI:50924', 'PUBCHEM': '216239', 'TEXT': 'sorafenib'}
-from indra.databases import hgnc_client
-hgnc_id = hgnc_client.get_hgnc_id('HIF1A')
-if hgnc_id:
-    ag2.db_refs['HGNC'] = hgnc_id
-standard_up_id = hgnc_client.get_uniprot_id(hgnc_id)
-if standard_up_id:
-    ag2.db_refs['UP'] = standard_up_id
-expStmt3 = stType(ag1,ag2)
-
-expObservations = {'RPS6':['phosphorylation',expStmt1],'PKM':['phosphorylation',expStmt2],'HIF1A':['increaseamount',expStmt3]}
-#expObservations = {'RPS6':['phosphorylation',expStmt1],'PKM':['phosphorylation',expStmt2]}
-#expObservations = {'PKM':['phosphorylation',expStmt2]}
-
-#expObservations = {'RPS6':['phosphorylation','SORAFENIB dephosphorylates RPS6']}#,'PKM':['phosphorylation','SORAFENIB phosphorylates PKM']} #,'AURKA':['phosphorylation','SORAFENIB phosphorylates AURKA'],'HIF1A':['increaseamount','SORAFENIB transcribes HIF1A'],'MYC':['increaseamount','SORAFENIB transcribes MYC'],'JUN':['phosphorylation','SORAFENIB phosphorylates JUN']}#,'STAT1':['phosphorylation','SORAFENIB phosphorylates STAT1']}#,'PDGFRA':'increased'}
 
 
 finalStmts = expandModel(expObservations,'SORAFENIB',['FLT3','KDR','PDGFRA'],initialStmts=filteredStmts,initialNodes=nodes)
