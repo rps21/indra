@@ -57,7 +57,7 @@ def findAllAgentNames(stmts):
 #    return lig_names, rec_names, lig_list, rec_list
 
 def find_rec_lig(stmts):
-    with open('/home/bobby/Dropbox/Sorger_Lab/indra/indra/tools/small_model_tools/lig_rec_dict.pkl','rb') as f:
+    with open('/home/bobby/Dropbox/Sorger_Lab/indra/indra/tools/small_model_tools/modelContext/lig_rec_dict.pkl','rb') as f:
         receptor_dict = pickle.load(f)
     allRecNames = list(itertools.chain.from_iterable(list(receptor_dict.values())))
     allAgentNames = findAllAgentNames(stmts)
