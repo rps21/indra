@@ -1,14 +1,14 @@
 import pickle
 from indra.tools import assemble_corpus as ac
 from indra.sources import trips
-from modelContext import enforceCascadeContext as cs
-from modelContext import combinePhosphorylationSites as ptm
-from modelContext import addImplicitMechs as aim
+from indra.tools.small_model_tools.modelContext import enforceCascadeContext as cs
+from indra.tools.small_model_tools.modelContext import combinePhosphorylationSites as ptm
+from indra.tools.small_model_tools.modelContext import addImplicitMechs as aim
 from indra.assemblers import PysbAssembler
 import pysb
-from addBNGLParameters import addSimParamters
-from addBNGLParameters import addObservables
-from modelContext import extraModelReductionTools as ex
+#from indra.tools.small_model_toolsaddBNGLParameters import addSimParamters
+#from indra.tools.small_model_toolsaddBNGLParameters import addObservables
+from indra.tools.small_model_tools.modelContext import extraModelReductionTools as ex
 
 def buildSmallModel(stmts):
 
