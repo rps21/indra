@@ -8,7 +8,6 @@ import itertools
 from copy import deepcopy
 from indra.statements import *
 from indra.preassembler.hierarchy_manager import hierarchies
-from indra.tools import assemble_corpus as ac
 
 logger = logging.getLogger('mechlinker')
 
@@ -218,6 +217,7 @@ class MechLinker(object):
         return new_stmts
 
     def require_active_forms_complex(self):
+        from indra.tools import assemble_corpus as ac 
         new_stmts = []
         for stmt in self.statements:
             if isinstance(stmt, Complex):
