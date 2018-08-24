@@ -87,6 +87,8 @@ def filter_prior(stmts,model_genes,model_types):
         filtered_stmts = filtered_stmts + ac.filter_by_type(filtered_by_genes,ty)
     return filtered_stmts
     
+
+
 def build_prior(model_genes,model_types,dbs=True,additional_stmts_files=[]):
     raw_model_stmts =  build_raw_prior(model_genes,dbs,additional_stmts_files)
     filtered_stmts = filter_prior(raw_model_stmts,model_genes,model_types)
