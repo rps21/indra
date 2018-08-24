@@ -34,8 +34,6 @@ def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
 
     #Apply small model simplification to list of statements 
     modelStmts = bsm.buildSmallModel(stmts)
-#    finalSorafStmts = ac.load_statements('finalSorafStmts_reduced.pkl')
-#    finalStmts = modelStmts + finalSorafStmts
 
     #build sif graph 
     sa = SifAssembler(modelStmts)
@@ -49,7 +47,7 @@ def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
     #For pg: 0 = positive, 1 = negative
     #In raw sif: 1 = positive, 0 = neutral, -1 = negative
     #below, keeping 0 the same turns neutral to positive. Is this best rule of thumb?
-    for line in sifModelText:       #check here
+    for line in sifModelText:       
         if ' 1 ' in line:
             newline = line.replace(' 1 ', ' 0 ')
         elif ' -1 ' in line:
@@ -66,10 +64,7 @@ def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
     return fn, modelStmts
 
 
-#######################
-
 #Build PG and find paths
-
 def findPaths(sifFile,source,target,length):
 
     #Make num_samples variable? Best practice?
@@ -87,7 +82,7 @@ def findPaths(sifFile,source,target,length):
 #Build model from paths
 
 #def buildModel(paths,stmts,drugStmts,save=False,fn='./modelStmts.pkl'):
-def buildModel(paths,stmts,nodes=None,save=False,fn='./modelStmts.pkl'):
+def buildModel(paths,stmts,drug,nodes=None,save=False,fn='./modelStmts.pkl'):
     uniqueNodes = []
     for path in paths:
         uniqueNodes = uniqueNodes + [el for el in list(path) if el not in uniqueNodes]
@@ -95,18 +90,15 @@ def buildModel(paths,stmts,nodes=None,save=False,fn='./modelStmts.pkl'):
     #Major bug in model building - fails if no ligand 
 #    #Need to handle this better, but for now just add relevant ligands
 #    #Also need drug and newly added phosphatase in the final model, not sure best place to add that, here for now 
-#    ligands = ['PDGF','FLT3LG','PDGFA','SORAFENIB','GenericPhosphatase']
-#    uniqueNodes = uniqueNodes + ligands
-
-    #print('Nodes for final model are %s' % uniqueNodes)
+#    ligands = ['PDGF','FLT3LG','PDGFA',
+    
+#    necessaryNodes = ['PDGF','FLT3LG','PDGFA',drug,'GenericAgent']
+    necessaryNodes = [drug,'GenericAgent']
+    uniqueNodes = uniqueNodes + necessaryNodes
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
-
-
+    modelStmts = Preassembler.combine_duplicate_stmts(modelStmts)  
     if save:
         ac.dump_statements(modelStmts,fn)
-
-    modelStmts = Preassembler.combine_duplicate_stmts(modelStmts)   #check here
-
 
     pa = PysbAssembler()
     pa.add_statements(modelStmts)
@@ -130,7 +122,7 @@ def runModelCheckingRoutine(stmts,drug,nodeToExplain,expStmts):
     fn, contextStmts = buildDirectedSif(stmts)
     paths = findPaths(fn,drug,nodeToExplain,8)
     if paths:
-        PySB_Model,modelStmts = buildModel(paths,contextStmts)
+        PySB_Model,modelStmts = buildModel(paths,contextStmts,drug)
         results, mc = testExpStmt(PySB_Model,expStmts)
         passResult = results[0][1].path_found
     else:
@@ -290,7 +282,7 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
 
 
 
-finalStmts = expandModel(expObservations,'SORAFENIB',['FLT3','KDR','PDGFRA'],initialStmts=filteredStmts,initialNodes=nodes)
+#finalStmts = expandModel(expObservations,'SORAFENIB',['FLT3','KDR','PDGFRA'],initialStmts=filteredStmts,initialNodes=nodes)
 
 
 

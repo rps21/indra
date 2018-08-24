@@ -29,10 +29,25 @@ prior_model_stmts = ac.load_statements('cardiotoxPrior.pkl')
 expSentences = 'SORAFENIB dephosphorylates RPS6. SORAFENIB phosphorylates PKM. SORAFENIB transcribes HIF1A.'
 exp_stmts = buildExperimentalStatements(expSentences)
 
+initialStmts = prior_model_stmts
+initialNodes = []
+for st in prior_model_stmts:
+    for ag in st.agent_list():
+        if ag.name not in initialNodes:
+            initialNodes.append(ag.name)
+
+
 expObservations = {'RPS6':['phosphorylation',exp_stmts[0]]}
+drug = 'SORAFENIB'
+drugTargets = ['FLT3','PDGFRA','KDR']
+stmts = prior_model_stmts
 
 
+modelStmts = expandModel(expObservations,drug,drugTargets,initialStmts,initialNodes)
 
-fn, contextStmts = buildDirectedSif(prior_model_stmts)
-passResult, modelStmts = runModelCheckingRoutine(prior_model_stmts,'SORAFENIB','RPS6',expObservations['RPS6'][0])
-
+#Outstanding issues:
+#Ligands in statements.
+#   tmp fix: include as input
+#   better fix: identify missing ligands during context generation, partially implemented
+#phosphorylation states in final model - phos_act and kinase, False?
+#Filter ubiquintation
