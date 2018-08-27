@@ -22,6 +22,9 @@ def collect_agent_name_list(stmts):
 
 def find_all_ptm_sites(stmts,name):
     relevantStatements = ac.filter_gene_list(stmts,[name],'one',remove_bound=True)
+    if name == 'DAPK1':
+        print(relevantStatements)
+
     uniqueMods = []
     for st in relevantStatements:
         for ag in st.agent_list():
@@ -29,7 +32,10 @@ def find_all_ptm_sites(stmts,name):
                 for mod in ag.mods:
                     if not any([mod.matches(umod) for umod in uniqueMods]):
                         uniqueMods.append(mod)
-
+#        if isinstance(st,Phosphorylation):
+#            newMod = ModCondition(mod_type='phosphorylation',residue=st.residue,position=st.position)
+#            if not any([newMod.matches(umod) for umod in uniqueMods]):
+#                uniqueMods.append(newMod)
     return uniqueMods
 
 
@@ -119,19 +125,17 @@ def replace_ptms(stmts,name,dictionary):
             for entry in list(dictionary.keys()):
                 try:
                     pos = entry.split(',')[2].strip().strip(')')
+                    res = entry.split(',')[1].strip()
                 except IndexError:
-                    pos = None
-                if pos:
-                    try: 
-                        res = entry.split(',')[1].strip()
-                    except IndexError:
+                    try:
+                        pos = str(int(entry.split(',')[1].strip().strip(')')))
                         res = None
-                else:
-                    try: 
+                    except ValueError:
+                        pos = None
                         res = entry.split(',')[1].strip().strip(')')
                     except IndexError:
+                        pos = None
                         res = None
-
 
                 if st.sub.name == name and st.residue == res and st.position == pos:   
                     st.residue = dictionary[str(entry)]
