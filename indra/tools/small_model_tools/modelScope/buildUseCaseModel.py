@@ -1,5 +1,6 @@
 from copy import deepcopy
 from pick import pick
+import tempfile
 from indra.statements import * 
 from indra.mechlinker import MechLinker
 from indra.preassembler import Preassembler
@@ -24,13 +25,9 @@ logging.getLogger("preassembler").setLevel(logging.WARNING)
 logging.getLogger("pysb_assembler").setLevel(logging.WARNING)
 
 #TODO:
-#Remove unused mods that exist on stmts, ex: Complex(HIF1A(mods: (sumoylation, phos_act)), MYC(mods: (ubiquitination, phos_act))),
-#Look for bugs in phosphorylation sites being generated.
-
-
 
 #Build sif file
-def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
+def buildDirectedSif(stmts):
 
     #Apply small model simplification to list of statements 
     modelStmts = bsm.buildSmallModel(stmts)
@@ -39,11 +36,12 @@ def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
     sa = SifAssembler(modelStmts)
     sifModel = sa.make_model(use_name_as_key=True, include_mods=True,include_complexes=True)
     directedSifModel = sa.print_model(include_unsigned_edges=True)
-    sa.save_model(fname='./rawSif_tmp.sif',include_unsigned_edges=True)
+    tempRawSif = tempfile.NamedTemporaryFile(mode='w+t',delete=True)
+    sa.save_model(fname=tempRawSif.name,include_unsigned_edges=True)
 
     newSifModelText = []
-    with open('./rawSif_tmp.sif','r') as f:
-        sifModelText = f.readlines()
+    sifModelText = tempRawSif.readlines()
+
     #For pg: 0 = positive, 1 = negative
     #In raw sif: 1 = positive, 0 = neutral, -1 = negative
     #below, keeping 0 the same turns neutral to positive. Is this best rule of thumb?
@@ -55,13 +53,14 @@ def buildDirectedSif(stmts,save=True,fn='./directedSifFile.sif'):
         else:
             newline = line    
         newSifModelText.append(newline)
+    tempRawSif.close()
 
-    if save:
-        with open(fn,'w') as f:
-            for line in newSifModelText:
-                f.write(line)
+    directedSif = tempfile.NamedTemporaryFile(mode='w+t',delete=False)
+    directedSifFN = directedSif.name
+    directedSif.writelines(newSifModelText)
+    directedSif.close()
 
-    return fn, modelStmts
+    return directedSifFN, modelStmts
 
 
 #Build PG and find paths
@@ -70,11 +69,10 @@ def findPaths(sifFile,source,target,length):
     #Make num_samples variable? Best practice?
     g = pg.api.load_signed_sif(sifFile)
     #This checks if there is any path whatsoever, positive or negative, and reports all nodes 
-    #is it better to be more mindful of polarities?
-    #depending on how/when it's called I can have an 3-part option to enforece either polarity or include both 
     paths1 = pg.api.sample_paths(g,source,target,max_depth=length,num_samples=10,cycle_free=True,signed=False,target_polarity=0) 
     paths2 = pg.api.sample_paths(g,source,target,max_depth=length,num_samples=10,cycle_free=True,signed=False,target_polarity=1) 
     paths = paths1+paths2
+    os.remove(sifFile)
 
     return paths
 
@@ -82,7 +80,7 @@ def findPaths(sifFile,source,target,length):
 #Build model from paths
 
 #def buildModel(paths,stmts,drugStmts,save=False,fn='./modelStmts.pkl'):
-def buildModel(paths,stmts,drug,nodes=None,save=False,fn='./modelStmts.pkl'):
+def buildModel(paths,stmts,drug,ligands,nodes=None,save=False,fn='./modelStmts.pkl'):
     uniqueNodes = []
     for path in paths:
         uniqueNodes = uniqueNodes + [el for el in list(path) if el not in uniqueNodes]
@@ -93,7 +91,7 @@ def buildModel(paths,stmts,drug,nodes=None,save=False,fn='./modelStmts.pkl'):
 #    ligands = ['PDGF','FLT3LG','PDGFA',
     
 #    necessaryNodes = ['PDGF','FLT3LG','PDGFA',drug,'GenericAgent']
-    necessaryNodes = [drug,'GenericAgent']
+    necessaryNodes = [drug,'GenericAgent'] + ligands
     uniqueNodes = uniqueNodes + necessaryNodes
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
     modelStmts = Preassembler.combine_duplicate_stmts(modelStmts)  
@@ -118,11 +116,11 @@ def testExpStmt(model,expStmt): #take in statements? Sentences?
 
 
 #drug targets and cogante ligands are build into funtions. These should be pulled out and made input variables. 
-def runModelCheckingRoutine(stmts,drug,nodeToExplain,expStmts):
+def runModelCheckingRoutine(stmts,drug,ligands,nodeToExplain,expStmts):
     fn, contextStmts = buildDirectedSif(stmts)
     paths = findPaths(fn,drug,nodeToExplain,8)
     if paths:
-        PySB_Model,modelStmts = buildModel(paths,contextStmts,drug)
+        PySB_Model,modelStmts = buildModel(paths,contextStmts,drug,ligands)
         results, mc = testExpStmt(PySB_Model,expStmts)
         passResult = results[0][1].path_found
     else:
@@ -194,7 +192,7 @@ def remove_mutations(stmts_in):
 #NEED to add failure after certain number of iterations that will present model for examination, can restart and choose different paths. 
 
 
-def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=None):
+def expandModel(expObservations,drug,drugTargets,ligands,initialStmts=None,initialNodes=None):
     finalStmts = []
     if initialStmts:
         currentStmts = initialStmts
@@ -208,7 +206,7 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
         nodeToExplain = key
         modToExplain = expObservations[key][0]
         expStmt = expObservations[key][1]
-        passResult, modelStmts = runModelCheckingRoutine(currentStmts,drug,nodeToExplain,expStmt)
+        passResult, modelStmts = runModelCheckingRoutine(currentStmts,drug,ligands,nodeToExplain,expStmt)
 
         #Model doesn't satisfy condition, go searching for statements to add to model 
         if passResult:
@@ -223,8 +221,8 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
                 candidateNodes = list(set(candidateNodes))
 
                 targetNodes = [nd for nd in candidateNodes if nd in drugTargets]    #Want to ensure any drug targets are in the potential node list, they are included before the cut off
-                if len(candidateNodes) >= 20:
-                    candidateNodes = candidateNodes[:21] + targetNodes
+                if len(candidateNodes) >= 50:
+                    candidateNodes = candidateNodes[:51] + targetNodes
                 #Add exit point
                 candidateNodes.append('exit')
 
@@ -252,7 +250,7 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
                     testStmts = ac.filter_gene_list(currentStmts,currentNodes,'all') + ac.filter_gene_list(stmtsDB,option,'one')  
                     #print(ac.filter_gene_list(stmtsDB,node,'one') )
     #                    passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,nodeToExplain,sentence)      
-                    passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,expStmt)      
+                    passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,ligands,finalNode,expStmt)      
                     if passResult:
                         found = 1
                         finalStmts = finalStmts + modelStmts
