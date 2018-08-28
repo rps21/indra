@@ -9,10 +9,9 @@ from indra.assemblers import SifAssembler
 import paths_graph as pg
 from indra.explanation import model_checker
 from indra.tools import assemble_corpus as ac
-#from modelContext import enforceCascadeContext as cs
-#from modelContext import combinePhosphorylationSites as ptm
 from indra.tools.small_model_tools.modelScope import indraDB_query as idb
 from indra.tools.small_model_tools.modelContext import buildSmallModel as bsm
+from indra.tools.small_model_tools.modelContext import extraModelReductionTools as ex
 import pysb
 
 import logging
@@ -78,25 +77,19 @@ def findPaths(sifFile,source,target,length):
 
 #########################
 #Build model from paths
-
-#def buildModel(paths,stmts,drugStmts,save=False,fn='./modelStmts.pkl'):
-def buildModel(paths,stmts,drug,ligands,nodes=None,save=False,fn='./modelStmts.pkl'):
+def buildModel(paths,stmts,drug,ligands,nodes=None):
     uniqueNodes = []
     for path in paths:
         uniqueNodes = uniqueNodes + [el for el in list(path) if el not in uniqueNodes]
 
     #Major bug in model building - fails if no ligand 
-#    #Need to handle this better, but for now just add relevant ligands
-#    #Also need drug and newly added phosphatase in the final model, not sure best place to add that, here for now 
-#    ligands = ['PDGF','FLT3LG','PDGFA',
+    #Need to handle this better, for now, all ligands as a special class of input node that we preserve
+    #Also have potential of GenericAgent (maybe others?) being removed if it's not in the path
     
-#    necessaryNodes = ['PDGF','FLT3LG','PDGFA',drug,'GenericAgent']
-    necessaryNodes = [drug,'GenericAgent'] + ligands
+    necessaryNodes = ['GenericAgent'] + ligands
     uniqueNodes = uniqueNodes + necessaryNodes
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
     modelStmts = Preassembler.combine_duplicate_stmts(modelStmts)  
-    if save:
-        ac.dump_statements(modelStmts,fn)
 
     pa = PysbAssembler()
     pa.add_statements(modelStmts)
@@ -130,18 +123,11 @@ def runModelCheckingRoutine(stmts,drug,ligands,nodeToExplain,expStmts):
 
 ###########################
 
-
-
-
-
-
-
-
 def findActiveForm(node,currentNodes):
     newAFStmt = None
     #find all non-mutation active forms for newly added node 
     stmtsDB_AF = idb.queryDB_nonmod(node,'activeform')
-    stmtsDB_AF = remove_mutations(stmtsDB_AF)
+    stmtsDB_AF = ex.removeMutations(stmtsDB_AF)
     stmtsDB_AF = [st for st in stmtsDB_AF if st.is_active]
 
     #provide list of af's to follow up on?
@@ -149,7 +135,6 @@ def findActiveForm(node,currentNodes):
     #Will rework this whole section in the futre
 
     for st in stmtsDB_AF:
-
         if st.agent.bound_conditions:
             boundName = newAF[-1].agent.bound_conditions[0].agent.name
             if boundName in currentNodes:
@@ -168,16 +153,6 @@ def findActiveForm(node,currentNodes):
 
     return newAFStmt
 
-##############################################
-#Move somewhere else, need now for filtering DB results because I only care about wild type cells currently
-def remove_mutations(stmts_in):
-    stmts_in = Preassembler.combine_duplicate_stmts(stmts_in)
-    stmts_new = stmts_in[:]
-    for st in stmts_in:
-        for ag in st.agent_list():
-                if ag.mutations:
-                    stmts_new.remove(st)
-    return stmts_new
 
 ##############################################
 
