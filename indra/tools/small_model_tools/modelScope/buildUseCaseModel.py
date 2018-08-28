@@ -156,19 +156,7 @@ def findActiveForm(node,currentNodes):
 
 ##############################################
 
-
-
-#NEW ISSUE:
-#Not all phos are equal. 
-#Should filter AF stmts on ones that are true, then filter phos stmts on ones that match these phos sites 
-#potential work around: when adding statement, remove res and pos.
-#This loses accuracy and generally suck, but would probably lead to functional model in short term. 
-
-#NEED to add failure after certain number of iterations that will present model for examination, can restart and choose different paths. 
-
-
 def expandModel(expObservations,drug,drugTargets,ligands,initialStmts=None,initialNodes=None):
-    finalStmts = []
     if initialStmts:
         currentStmts = initialStmts
         currentNodes = initialNodes
@@ -185,7 +173,7 @@ def expandModel(expObservations,drug,drugTargets,ligands,initialStmts=None,initi
 
         #Model doesn't satisfy condition, go searching for statements to add to model 
         if passResult:
-            finalStmts = finalStmts + modelStmts
+            finalStmts = modelStmts
         else:
             found = 0
             while found == 0:
@@ -200,61 +188,50 @@ def expandModel(expObservations,drug,drugTargets,ligands,initialStmts=None,initi
                         #If yes, check if satisfy model checker 
                         currentNodes.append(node)
                         print('Testing new node %s' % node)
-                        testStmts = currentStmts + ac.filter_gene_list(stmtsDB,node,'one')  
-                        #testStmts = ac.filter_gene_list(currentStmts,currentNodes,'all') + ac.filter_gene_list(stmtsDB,option,'one')  
+                        testStmts = currentStmts + ac.filter_gene_list(stmtsDB,node,'one')  #+ prior filtered by new node?
                         passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,ligands,finalNode,expStmt)      
                         if passResult:
                             found = 1
-                            #CHECK THIS 
-                            finalStmts = finalStmts + modelStmts
+                            finalStmts = modelStmts
                             print('Worked!')
                             break
                         else:
                             currentNodes.pop()
-                if found == 0:  #Might not need iff
-                    #pick
-                    targetNodes = [nd for nd in candidateNodes if nd in drugTargets]    #Want to ensure any drug targets are in the potential node list, they are included before the cut off
-                    if len(candidateNodes) >= 25:
-                        candidateNodes = candidateNodes[:26] + targetNodes
+
+                #If we haven't found a node to complete the model yet
+                if found == 0:  
                     #Add exit point
                     candidateNodes.append('exit')
-                    #If no single node satisfies condition, pick one node to add to model. 
-                    #allow user to pick node for next iteration. Following all nodes will result in a combinatorial explosion
+                    #allow user to pick node to test
                     title = 'Pick the protein to follow up on, for %s on %s' % (modToExplain,nodeToExplain)
-                    #allMechs = allMechs + '\n' + title
                     if candidateNodes:
                         option,index = pick(candidateNodes,title,indicator='=>',default_index=0)    #This really sucks
                     else:
-                        candidateNodes
                         print('No options founds')
                         found = 1
+                    #Handle selected option 
                     if option == 'exit':
                         found = 1
                     else:
                         currentNodes.append(option)
                         print('Testing new node %s' % option)
                         testStmts = currentStmts + ac.filter_gene_list(stmtsDB,node,'one')  
-                        #testStmts = ac.filter_gene_list(currentStmts,currentNodes,'all') + ac.filter_gene_list(stmtsDB,option,'one')  
-                        #print(ac.filter_gene_list(stmtsDB,node,'one') )
-        #                    passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,nodeToExplain,sentence)      
                         passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,ligands,finalNode,expStmt)      
                         if passResult:
                             found = 1
-                            finalStmts = finalStmts + modelStmts
+                            finalStmts = modelStmts
                             print('Worked!')
                             break
+                        else:
+                            #specify stmts, nodes, mods for next loop iteration
+                            #This finds all relevant statements returned by DB for the new node. Will often be one, but should likely limit to one carefully selected statement
+                            stmtsForNewNode = ac.filter_gene_list(stmtsDB,option,'one')  
+                            newAFStmt = findActiveForm(option,currentNodes)                   
+                            currentStmts = currentStmts + stmtsForNewNode + [newAFStmt]
+                            currentNodes.append(option)
 
-                    if found == 0:
-                        #specify stmts, nodes, mods for next loop iteration
-                        #This finds all relevant statements returned by DB for the new node. Will often be one, but should likely limit to one carefully selected statement
-                        stmtsForNewNode = ac.filter_gene_list(stmtsDB,option,'one')  
-                        newAFStmt = findActiveForm(option,currentNodes)                   
-                        currentStmts = currentStmts + stmtsForNewNode + [newAFStmt]
-                        currentNodes.append(option)
-
-                        nodeToExplain = option  
-                        modToExplain = 'phosphorylation' #This need to be fixed/generalized
-
+                            nodeToExplain = option  
+                            modToExplain = 'phosphorylation' #This need to be fixed/generalized
     return finalStmts              
 
 
