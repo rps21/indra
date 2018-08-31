@@ -15,7 +15,7 @@ from indra.tools.small_model_tools.modelContext import extraModelReductionTools 
 import pysb
 
 import logging
-logging.getLogger("assemble_corpus").setLevel(logging.WARNING)
+#logging.getLogger("assemble_corpus").setLevel(logging.WARNING)
 logging.getLogger("pre_cfpg").setLevel(logging.WARNING)
 logging.getLogger("model_checker").setLevel(logging.WARNING)
 logging.getLogger("paths_graph").setLevel(logging.WARNING)
@@ -81,7 +81,6 @@ def buildModel(paths,stmts,drug,ligands,nodes=None):
     uniqueNodes = []
     for path in paths:
         uniqueNodes = uniqueNodes + [el for el in list(path) if el not in uniqueNodes]
-
     #Major bug in model building - fails if no ligand 
     #Need to handle this better, for now, all ligands as a special class of input node that we preserve
     #Also have potential of GenericAgent (maybe others?) being removed if it's not in the path
