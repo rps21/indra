@@ -56,8 +56,9 @@ def addObservables(pysbModel,bound=False):
             try:
                 i+=1
                 monomer.site_states[site]  #means a site has a flippable state 
-                pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:monomer.site_states[site][1]})   #Should see if [1] is always the perturbed/activated state
-                newModel.observables.add(Observable(name='%s_%s_phos'%(monomer.name,site),reaction_pattern=pattern))
+                if len(monomer.site_states[site]) > 1:
+                    pattern = MonomerPattern(compartment=None,monomer=monomer,site_conditions={site:monomer.site_states[site][1]})   #Should see if [1] is always the perturbed/activated state
+                    newModel.observables.add(Observable(name='%s_%s_phos'%(monomer.name,site),reaction_pattern=pattern))
 
             #Bound observables are optionally available
             except KeyError:
