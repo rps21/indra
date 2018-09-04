@@ -18,8 +18,6 @@ def addPhosDephos(phosStmts,dephosStmts):
         dephos_pos = deepcopy(st.position)
 
         if dephos_ag.name not in dephosSubstrates: #This means there is no statement dephosphorylating an agent that is phosphorylated
-            dephos_mod = ModCondition(mod_type='phosphorylation',residue=dephos_res,position=dephos_pos)
-            dephos_ag.mods = [dephos_mod]
             dephos_st = Dephosphorylation(implicitAgent, dephos_ag, residue=dephos_res, position=dephos_pos)
             outputStmts.append(dephos_st)
 
