@@ -126,10 +126,8 @@ def add_receptor_ligand_activeform(stmts):
     for st in rec_lig_stmts:
         if isinstance(st,Phosphorylation) and st.sub.name in recInCorpus:
             oldPhosStmts.append(st)
-            #outputStmts = [st for st in stmts if st not in oldPhosStmts]
         elif isinstance(st,Dephosphorylation) and st.sub.name in recInCorpus:
             oldPhosStmts.append(st)
-            #outputStmts = [st for st in stmts if st not in oldPhosStmts]
 
     #Need to sort receptors into two groups: those phosphorylated and those not
     allPhosNames = findAllAgentNames(oldPhosStmts)
