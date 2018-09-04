@@ -103,24 +103,33 @@ def find_rec_lig(stmts):
             ligRecPairAgents.append(ligRecPairAgent)
 
     ligRecPairNames = list(set(ligRecPairNames))
+    print(ligRecPairNames)
+    print(ligRecPairAgents)
     return ligRecPairNames, ligRecPairAgents, recInCorpus
 
 #Main idea here: typically, ligand binding is the active form for a receptor
 #Exception: if there is phosphorylation of receptor without outside kinase i.e. cis or trans phos following ligand binding 
     #In this case phosphorylation is the active form, but the phosphorylation reaction should require ligand binding. 
 
+#Filter by 'one'
+#check phos and is sub 
+
+
 def add_receptor_ligand_activeform(stmts):
     new_af_stmts = []
-    outputStmts = []
     ligRecPairs, ligRecPairAgents, recInCorpus = find_rec_lig(stmts)
-    rec_lig_stmts = ac.filter_gene_list(stmts,list(itertools.chain.from_iterable(ligRecPairs)),'all',remove_bound=True)
-    
+    outputStmts = ac.filter_gene_list(stmts,list(itertools.chain.from_iterable(ligRecPairs)),'all',invert=True)
+    rec_lig_stmts = ac.filter_gene_list(stmts,list(itertools.chain.from_iterable(ligRecPairs)),'one',remove_bound=True)
+
     #Remove old phosphorylation statements involving only ligand and receptor, going to replace with new statements. 
     oldPhosStmts = []
     for st in rec_lig_stmts:
-        if isinstance(st,Phosphorylation):
+        if isinstance(st,Phosphorylation) and st.sub.name in recInCorpus:
             oldPhosStmts.append(st)
-            outputStmts = [st for st in stmts if st not in oldPhosStmts]
+            #outputStmts = [st for st in stmts if st not in oldPhosStmts]
+        elif isinstance(st,Dephosphorylation) and st.sub.name in recInCorpus:
+            oldPhosStmts.append(st)
+            #outputStmts = [st for st in stmts if st not in oldPhosStmts]
 
     #Need to sort receptors into two groups: those phosphorylated and those not
     allPhosNames = findAllAgentNames(oldPhosStmts)
@@ -131,6 +140,7 @@ def add_receptor_ligand_activeform(stmts):
             phos_rec.append(rec)
         else:
             non_phos_rec.append(rec)
+    
 
     #now use rec-lig pairs to build af stmts directly, instead of looping through. handle phos and non phos rec diff
     for pair in ligRecPairAgents:
@@ -142,7 +152,9 @@ def add_receptor_ligand_activeform(stmts):
             kinAg = deepcopy(recAg)
             kinAg.bound_conditions = [BoundCondition(ligAg)]
             newPhosStmt = Phosphorylation(kinAg,recAg)
+            newComplexStmt = Complex([ligAg,recAg])
             new_af_stmts.append(newPhosStmt)
+            new_af_stmts.append(newComplexStmt)
 
             afAg = deepcopy(recAg)
             afAg.mods.append(ModCondition(mod_type='phosphorylation'))
@@ -157,12 +169,14 @@ def add_receptor_ligand_activeform(stmts):
             newRecAg.bound_conditions = [BoundCondition(ligAg)]
             af_stmt = ActiveForm(newRecAg,activity='activity',is_active=True)
             new_af_stmts.append(af_stmt)
+            newComplexStmt = Complex([ligAg,recAg])
+            new_af_stmts.append(newComplexStmt)
+
 
 
     new_af_stmts = Preassembler.combine_duplicate_stmts(new_af_stmts)
     outputStmts = outputStmts + new_af_stmts
     return outputStmts, ligRecPairs, recInCorpus
-
 
 
 
