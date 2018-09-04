@@ -7,6 +7,7 @@ from indra.tools import assemble_corpus as ac
 from indra.statements import *
 from indra.mechlinker import MechLinker
 from indra.preassembler import Preassembler
+from indra.databases import hgnc_client
 import logging
 logging.getLogger("assemble_corpus").setLevel(logging.WARNING)
 
@@ -65,6 +66,7 @@ def find_rec_lig(stmts):
     ligRecPairNames = []
     ligRecPairAgents = []
     for receptor in recInCorpus:
+        ligRecPair = None
         for ligRef, recRef in receptor_dict.items():    
             if receptor in recRef:
                 if ligRef in allAgentNames:
@@ -78,19 +80,28 @@ def find_rec_lig(stmts):
                     except UnboundLocalError:
                         print('No agent found with name %s, creating agent' % ligRef)
                         ligAg = Agent(ligRef)
-                    try:
-                        recAg = find_agent(stmts,receptor)
-                    except UnboundLocalError:
-                        print('No agent found with name %s' % receptor)
-                        recAg = Agent(receptor) #This will be missing db_refs
+                    recAg = find_agent(stmts,receptor)
                     ligRecPairAgent = (ligAg,recAg)  
                     ligRecPairAgents.append(ligRecPairAgent)
 
+                #Save a single ligand for each receptor, in case no matching ligands are found in statement list
                 else:
                     backupLigRecPair = (ligRef,receptor) #strings, not agents
 
-        if not ligRecPairNames:
+        #Handle case where no ligands are found for a receptor within the statement list
+        if not ligRecPair:
             ligRecPairNames.append(backupLigRecPair)
+            ligAg = Agent(backupLigRecPair[0])
+            hgnc_id = hgnc_client.get_hgnc_id(backupLigRecPair[0])
+            if hgnc_id:
+                ligAg.db_refs['HGNC'] = hgnc_id
+            standard_up_id = hgnc_client.get_uniprot_id(hgnc_id)
+            if standard_up_id:
+                ligAg.db_refs['UP'] = standard_up_id
+            recAg = find_agent(stmts,receptor)
+            ligRecPairAgent = (ligAg,recAg)  
+            ligRecPairAgents.append(ligRecPairAgent)
+
     ligRecPairNames = list(set(ligRecPairNames))
     return ligRecPairNames, ligRecPairAgents, recInCorpus
 
