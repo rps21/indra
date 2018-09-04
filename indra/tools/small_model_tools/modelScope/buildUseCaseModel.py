@@ -12,6 +12,7 @@ from indra.tools import assemble_corpus as ac
 from indra.tools.small_model_tools.modelScope import indraDB_query as idb
 from indra.tools.small_model_tools.modelContext import buildSmallModel as bsm
 from indra.tools.small_model_tools.modelContext import extraModelReductionTools as ex
+from indra.tools.small_model_tools.modelContext import enforceCascadeContext as cs
 import pysb
 
 import logging
@@ -27,6 +28,9 @@ logging.getLogger("pysb_assembler").setLevel(logging.WARNING)
 
 #Build sif file
 def buildDirectedSif(stmts):
+
+    #TESTING
+    ac.dump_statements(stmts,'testingContext.pkl')
 
     #Apply small model simplification to list of statements 
     modelStmts = bsm.buildSmallModel(stmts)
@@ -77,17 +81,22 @@ def findPaths(sifFile,source,target,length):
 
 #########################
 #Build model from paths
-def buildModel(paths,stmts,drug,ligands,nodes=None):
+def buildModel(paths,stmts,drug,nodes=[]):
     uniqueNodes = []
     for path in paths:
         uniqueNodes = uniqueNodes + [el for el in list(path) if el not in uniqueNodes]
-    #Major bug in model building - fails if no ligand 
-    #Need to handle this better, for now, all ligands as a special class of input node that we preserve
-    #Also have potential of GenericAgent (maybe others?) being removed if it's not in the path
     
-    necessaryNodes = ['GenericAgent'] + ligands
+
+
+    necessaryNodes = ['GenericAgent'] + nodes  #Allow for specification of nodes that must be in a model, even if they aren't found on a path. ir
     uniqueNodes = uniqueNodes + necessaryNodes
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
+
+    recLigNamePairs = cs.find_rec_lig(modelStmts)[0]
+    recLigNames = list(itertools.chain.from_iterable(recLigNamePairs))
+    uniqueNodes = uniqueNodes + recLigNames    #Additionally add back any missing ligands, so a receptor always has a pa
+    modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
+
     modelStmts = Preassembler.combine_duplicate_stmts(modelStmts)  
 
     pa = PysbAssembler()
@@ -107,12 +116,11 @@ def testExpStmt(model,expStmt): #take in statements? Sentences?
     return results, mc
 
 
-#drug targets and cogante ligands are build into funtions. These should be pulled out and made input variables. 
-def runModelCheckingRoutine(stmts,drug,ligands,nodeToExplain,expStmts):
+def runModelCheckingRoutine(stmts,drug,nodeToExplain,expStmts):
     fn, contextStmts = buildDirectedSif(stmts)
     paths = findPaths(fn,drug,nodeToExplain,8)
     if paths:
-        PySB_Model,modelStmts = buildModel(paths,contextStmts,drug,ligands)
+        PySB_Model,modelStmts = buildModel(paths,contextStmts,drug)
         results, mc = testExpStmt(PySB_Model,expStmts)
         passResult = results[0][1].path_found
     else:
@@ -155,7 +163,7 @@ def findActiveForm(node,currentNodes):
 
 ##############################################
 
-def expandModel(expObservations,drug,drugTargets,ligands,initialStmts=None,initialNodes=None):
+def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=None):
     if initialStmts:
         currentStmts = initialStmts
         currentNodes = initialNodes
@@ -168,7 +176,7 @@ def expandModel(expObservations,drug,drugTargets,ligands,initialStmts=None,initi
         nodeToExplain = key
         modToExplain = expObservations[key][0]
         expStmt = expObservations[key][1]
-        passResult, modelStmts = runModelCheckingRoutine(currentStmts,drug,ligands,nodeToExplain,expStmt)
+        passResult, modelStmts = runModelCheckingRoutine(currentStmts,drug,nodeToExplain,expStmt)
 
         #Model doesn't satisfy condition, go searching for statements to add to model 
         if passResult:
@@ -188,7 +196,7 @@ def expandModel(expObservations,drug,drugTargets,ligands,initialStmts=None,initi
                         currentNodes.append(node)
                         print('Testing new node %s' % node)
                         testStmts = currentStmts + ac.filter_gene_list(stmtsDB,node,'one')  #+ prior filtered by new node?
-                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,ligands,finalNode,expStmt)      
+                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,expStmt)      
                         if passResult:
                             found = 1
                             finalStmts = modelStmts
@@ -215,7 +223,7 @@ def expandModel(expObservations,drug,drugTargets,ligands,initialStmts=None,initi
                         currentNodes.append(option)
                         print('Testing new node %s' % option)
                         testStmts = currentStmts + ac.filter_gene_list(stmtsDB,node,'one')  
-                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,ligands,finalNode,expStmt)      
+                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,expStmt)      
                         if passResult:
                             found = 1
                             finalStmts = modelStmts
