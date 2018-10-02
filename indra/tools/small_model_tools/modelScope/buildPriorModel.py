@@ -40,13 +40,14 @@ def add_database_stmts(model_genes):
 
 
 def build_raw_prior(model_genes,dbs=True,additional_stmts_files=[]):
+    if additional_stmts_files:
+        for fn in additional_stmts_files:
+            additional_stmts = ac.load_statements(fn) + additional_stmts 
     if dbs:
         db_stmts = add_database_stmts(model_genes)
     else:
         db_stmts = []
-    additional_stmts = []
-    for fn in additional_stmts_files:
-        additional_stmts = ac.load_statements(fn) + additional_stmts  
+    additional_stmts = [] 
     raw_prior_stmts = db_stmts + additional_stmts
     return raw_prior_stmts
 

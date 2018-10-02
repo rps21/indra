@@ -13,6 +13,7 @@ from indra.tools.small_model_tools.modelScope import indraDB_query as idb
 from indra.tools.small_model_tools.modelContext import buildSmallModel as bsm
 from indra.tools.small_model_tools.modelContext import extraModelReductionTools as ex
 from indra.tools.small_model_tools.modelContext import enforceCascadeContext as cs
+from indra.tools.small_model_tools.modelContext import addImplicitMechs as aim
 import pysb
 
 import logging
@@ -30,7 +31,7 @@ logging.getLogger("pysb_assembler").setLevel(logging.WARNING)
 def buildDirectedSif(stmts):
 
     #TESTING
-    ac.dump_statements(stmts,'testingContext.pkl')
+#    ac.dump_statements(stmts,'testingContext.pkl')
 
     #Apply small model simplification to list of statements 
     modelStmts = bsm.buildSmallModel(stmts)
@@ -90,15 +91,17 @@ def buildModel(paths,stmts,drug,nodes=[]):
 
     necessaryNodes = ['GenericAgent'] + nodes  #Allow for specification of nodes that must be in a model, even if they aren't found on a path. ir
     uniqueNodes = uniqueNodes + necessaryNodes
+    print('UNIQUE NODES ARE %s' % uniqueNodes)
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
 
     recLigNamePairs = cs.find_rec_lig(modelStmts)[0]
     recLigNames = list(itertools.chain.from_iterable(recLigNamePairs))
     uniqueNodes = uniqueNodes + recLigNames    #Additionally add back any missing ligands, so a receptor always has a pa
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
+    print('UNIQUE NODES PT 2 ARE %s' % uniqueNodes)
 
     modelStmts = Preassembler.combine_duplicate_stmts(modelStmts)  
-
+    ac.dump_statements(modelStmts,'cardiotox_mapk_testing.pkl')
     pa = PysbAssembler()
     pa.add_statements(modelStmts)
     PySB_Model = pa.make_model()
@@ -110,19 +113,27 @@ def buildModel(paths,stmts,drug,nodes=[]):
 def testExpStmt(model,expStmt): #take in statements? Sentences?
 
     testStmts = [expStmt]
+    print('HERE %s' % testStmts)
     mc = model_checker.ModelChecker(model=model,statements=testStmts)
-    results = mc.check_model(max_path_length=8)
+    results = mc.check_model(max_path_length=15)
 
     return results, mc
 
 
-def runModelCheckingRoutine(stmts,drug,nodeToExplain,expStmts):
+def runModelCheckingRoutine(stmts,drug,nodeToExplain,expStmts,extraNodes):
     fn, contextStmts = buildDirectedSif(stmts)
-    paths = findPaths(fn,drug,nodeToExplain,8)
+    paths = findPaths(fn,drug,nodeToExplain,15)
+    print(expStmts)
+    print(paths)
+
     if paths:
-        PySB_Model,modelStmts = buildModel(paths,contextStmts,drug)
+        extraNodes.append(drug)
+        PySB_Model,modelStmts = buildModel(paths,contextStmts,drug,extraNodes)
+        ac.dump_statements(modelStmts,'testingStmts.pkl')
         results, mc = testExpStmt(PySB_Model,expStmts)
+        print(results)
         passResult = results[0][1].path_found
+#        ac.dump_statements(modelStmts,'testingStmts.pkl')
     else:
         passResult = None
         modelStmts = None
@@ -136,6 +147,7 @@ def findActiveForm(node,currentNodes):
     stmtsDB_AF = idb.queryDB_nonmod(node,'activeform')
     stmtsDB_AF = ex.removeMutations(stmtsDB_AF)
     stmtsDB_AF = [st for st in stmtsDB_AF if st.is_active]
+    stmtsDB = idb.cleanStatements(stmtsDB_AF)
 
     #provide list of af's to follow up on?
     #Ideally, check for a bound condition, and see if binder is in model already. If not, check for phos. If neither...
@@ -143,27 +155,54 @@ def findActiveForm(node,currentNodes):
 
     for st in stmtsDB_AF:
         if st.agent.bound_conditions:
-            boundName = newAF[-1].agent.bound_conditions[0].agent.name
+            boundName = st.agent.bound_conditions[0].agent.name
+            print(boundName)
+            
+            print(currentNodes)
             if boundName in currentNodes:
-                newAFStmt = st
-        elif st.agent.mods:
-            if st.agent.mods[0].mod_type == 'phosphorylation':  
-
-                newMod = 'phosphorylation'    
-                #Later, filter and feedback instead of generalizing   
-                st_general = deepcopy(st)
-                st_general.agent.mods[0].residue = None    
-                st_general.agent.mods[0].position = None       
-
-                newAFStmt = st_general       #Make sure to take a stmt where is_active=True
+                print('YES')
+                newComplexStmt = Complex([st.agent,st.agent.bound_conditions[0].agent])
+                newAFStmt = [st,newComplexStmt]
+                print(newAFStmt)
                 break
+    if not newAFStmt:
+        for st in stmtsDB_AF:
+            if st.agent.mods:
+                if st.agent.mods[0].mod_type == 'phosphorylation':  
+
+                    newMod = 'phosphorylation'    
+                    #Later, filter and feedback instead of generalizing   
+                    st_general = deepcopy(st)
+                    st_general.agent.mods[0].residue = None    
+                    st_general.agent.mods[0].position = None       
+
+                    newAFStmt = [st_general]       #Make sure to take a stmt where is_active=True
+                    break
+
+    if not stmtsDB_AF:
+        stmtsDB_AF = idb.queryDB_nonmod(node,'increaseamount')    
+        #pick tf
+        candidateNodes = idb.getCandidateNodes(stmtsDB_AF)
+        #Add exit point
+        candidateNodes.append('exit')
+        #allow user to pick node to test
+        title = 'Pick the TF to follow up on, for %s of %s' % ('transcription',node)
+        if candidateNodes:
+            option,index = pick(candidateNodes,title,indicator='=>',default_index=0)    #This really sucks
+        else:
+            print('No options founds')
+            found = 1
+        #Handle selected option 
+        if option == 'exit':
+            found = 1
+        newAFStmt = ac.filter_gene_list(stmtsDB_AF,[option],'one')
 
     return newAFStmt
 
 
 ##############################################
 
-def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=None):
+def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=None,extraNodes=[]):
     if initialStmts:
         currentStmts = initialStmts
         currentNodes = initialNodes
@@ -176,7 +215,7 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
         nodeToExplain = key
         modToExplain = expObservations[key][0]
         expStmt = expObservations[key][1]
-        passResult, modelStmts = runModelCheckingRoutine(currentStmts,drug,nodeToExplain,expStmt)
+        passResult, modelStmts = runModelCheckingRoutine(currentStmts,drug,nodeToExplain,expStmt,extraNodes)
 
         #Model doesn't satisfy condition, go searching for statements to add to model 
         if passResult:
@@ -186,20 +225,24 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
             while found == 0:
                 #search for potential nodes and stmts to add to the model 
                 stmtsDB = idb.queryDB(nodeToExplain,modToExplain)
+                stmtsDB = idb.cleanStatements(stmtsDB)
                 #identify all new nodes that are candidates for the model 
                 candidateNodes = idb.getCandidateNodes(stmtsDB)
                 candidateNodes = list(set(candidateNodes))
+                currentNodes = list(set(currentNodes))
                 #check if any candidate nodes are already in the model
                 for node in currentNodes:
                     if node in candidateNodes:
                         #If yes, check if satisfy model checker 
                         currentNodes.append(node)
                         print('Testing new node %s' % node)
+                        print(currentNodes)
                         testStmts = currentStmts + ac.filter_gene_list(stmtsDB,node,'one')  #+ prior filtered by new node?
-                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,expStmt)      
+
+                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,expStmt,extraNodes)      
                         if passResult:
                             found = 1
-                            finalStmts = modelStmts
+                            finalStmts = aim.addAll(modelStmts)
                             print('Worked!')
                             break
                         else:
@@ -219,11 +262,12 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
                     #Handle selected option 
                     if option == 'exit':
                         found = 1
+
                     else:
                         currentNodes.append(option)
                         print('Testing new node %s' % option)
                         testStmts = currentStmts + ac.filter_gene_list(stmtsDB,node,'one')  
-                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,expStmt)      
+                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,expStmt,extraNodes)      
                         if passResult:
                             found = 1
                             finalStmts = modelStmts
@@ -233,12 +277,31 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
                             #specify stmts, nodes, mods for next loop iteration
                             #This finds all relevant statements returned by DB for the new node. Will often be one, but should likely limit to one carefully selected statement
                             stmtsForNewNode = ac.filter_gene_list(stmtsDB,option,'one')  
+                            if not stmtsForNewNode:
+                                stmtsForNewNode = []
                             newAFStmt = findActiveForm(option,currentNodes)                   
-                            currentStmts = currentStmts + stmtsForNewNode + [newAFStmt]
-                            currentNodes.append(option)
+                            currentStmts = currentStmts + stmtsForNewNode + newAFStmt
+                            if len(newAFStmt) == 1:
+                                if isinstance(newAFStmt[0],ActiveForm):
+                                    currentNodes.append(option) #Is this getting all nodes? With new bound one?
+                                    nodeToExplain = option  
+                                    modToExplain = 'phosphorylation' #WRONG
+                                elif isinstance(newAFStmt[0],IncreaseAmount):
+                                    currentNodes.append(option) #
+                                    nodeToExplain = newAFStmt[0].subj.name
+                                    currentNodes.append(nodeToExplain) #
+                                    newAFStmt = findActiveForm(nodeToExplain,currentNodes)                   
+                                    currentStmts = currentStmts + stmtsForNewNode + newAFStmt
+                            else:           
+                                while len(newAFStmt) > 1:                     
+                                    currentNodes.append(option)
+                                    nodeToExplain = ac.filter_by_type(newAFStmt,ActiveForm)[0].agent.bound_conditions[0].agent.name
+                                    currentNodes.append(nodeToExplain) #Is this getting all nodes? With new bound one?
+                                    newAFStmt = findActiveForm(nodeToExplain,currentNodes)                   
+                                    currentStmts = currentStmts + stmtsForNewNode + newAFStmt
+                                modToExplain = 'phosphorylation' #WRONG
+                                    #recheck model, get new af
 
-                            nodeToExplain = option  
-                            modToExplain = 'phosphorylation' #This need to be fixed/generalized
     return finalStmts              
 
 
