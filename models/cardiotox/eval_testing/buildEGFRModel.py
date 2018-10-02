@@ -16,18 +16,20 @@ import pysb
 #Build Prior
 
 
-model_types = [Phosphorylation,Dephosphorylation,ActiveForm,IncreaseAmount,DecreaseAmount,Complex] #Gef,GtpActivation]#Check sos and raf stmts 
-drugTargets = ['PDGFRA']#,'KDR','FLT3']
-modifiedNodes = ['RPS6','PKM','HIF1A']# ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC']
-#modifiedNodes = ['PKM']# ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC']
-otherNodes =[]# ['MYC','JUN']#ligands = ['PDGFA','PDGF','VEGF','VEGFA','FLT3LG']
+model_types = [Phosphorylation,Dephosphorylation,ActiveForm,IncreaseAmount,DecreaseAmount,Complex,Gef,GtpActivation]#Check sos and raf stmts 
+drugTargets = ['BRAF','RAF1','RAF']
+modifiedNodes = ['MAPK3']# 
+otherNodes = ['EGF','EGFR','SOS1','GRB2','BRAF','KRAS']#ligands = ['PDGFA','PDGF','VEGF','VEGFA','FLT3LG']
 model_genes = drugTargets + modifiedNodes + otherNodes
 
 
-reach_stmts = './indraReading/raw_stmts/reach_output.pkl'
-trips_stmts = './indraReading/raw_stmts/trips_output.pkl'
-prior_stmts = build_prior(model_genes,model_types,dbs=True,additional_stmts_files=[])
+reach_stmts = []
+trips_stmts = []
+prior_stmts = build_prior(model_genes,model_types,dbs=True,additional_stmts_files=None)
+ac.dump_statements(prior_stmts,'eval_raw_prior.pkl')
 
+
+prior_stmts = ac.load_statements('eval_raw_prior.pkl')
 #Prior reduction
 
 #Map to model_types
@@ -59,12 +61,12 @@ prior_model_stmts = ex.removeDimers(prior_model_stmts)
 
 
 #Add drug-target interactions 
-drugSentences = 'SORAFENIB dephosphorylates PDGFRA. SORAFENIB dephosphorylates KDR. SORAFENIB dephosphorylates FLT3'
+drugSentences = 'Vemurafenib dephosphorylates BRAF.'
 drug_stmts = buildDrugTargetStmts(drugSentences)
 prior_model_stmts = prior_stmts + drug_stmts
 
 #save prior model 
-ac.dump_statements(prior_model_stmts,'cardiotoxPrior.pkl')
+ac.dump_statements(prior_model_stmts,'evalPrior.pkl')
 
 
 
@@ -72,19 +74,15 @@ ac.dump_statements(prior_model_stmts,'cardiotoxPrior.pkl')
 
 #Expand model to match experimental observations
 
-prior_model_stmts = ac.load_statements('cardiotoxPrior.pkl')
-#otherNodes = ['MYC','JUN']#ligands = ['PDGFA','PDGF','VEGF','VEGFA','FLT3LG']
+prior_model_stmts = ac.load_statements('evalPrior.pkl')
 
-expSentences = 'SORAFENIB dephosphorylates RPS6. SORAFENIB phosphorylates PKM. SORAFENIB transcribes HIF1A.'
+expSentences ='Vemurafenib phosphorylates MAPK3 on phos_act. Vemurafenib dephosphorylates MAPK3 on phos_act.'
 exp_stmts = buildExperimentalStatements(expSentences)
 
 
-expObservations = {'RPS6':['phosphorylation',exp_stmts[0]],'PKM':['dephosphorylation',exp_stmts[1]],'HIF1A':['decreaseamount',exp_stmts[2]]}
-#expObservations = {'PKM':['phosphorylation',exp_stmts[1]]}
-#expObservations = {'PKM':['dephosphorylation',exp_stmts[1]]}
-drug = 'SORAFENIB'
-#drugTargets = ['FLT3','PDGFRA','KDR']
-drugTargets = ['PDGFRA']
+expObservations = {'MAPK3':['phosphorylation',exp_stmts[1]]}#,'MAPK3':['dephosphorylation',exp_stmts[0]]}
+drug = 'VEMURAFENIB'
+drugTargets = ['BRAF','RAF1','RAF']
 initialStmts = prior_model_stmts
 initialNodes = []
 for st in prior_model_stmts:
@@ -93,12 +91,17 @@ for st in prior_model_stmts:
             initialNodes.append(ag.name)
 
 
-modelStmts = expandModel(expObservations,drug,drugTargets,initialStmts,initialNodes,otherNodes)
+modelStmts = expandModel(expObservations,drug,drugTargets,initialStmts,initialNodes)
 
 
 ###########################################################################
 
 #Build and write bngl model 
+
+stmts1 = ac.load_statements('cardiotox_mapk_testing_s6.pkl')
+stmts2 = ac.load_statements('cardiotox_mapk_testing_hif.pkl')
+stmts3 = ac.load_statements('cardiotox_mapk_pkm.pkl')
+modelStmts = stmts1+stmts2+stmts3
 
 pa = PysbAssembler()
 pa.add_statements(modelStmts)
@@ -109,11 +112,11 @@ model_obs = addObservables(pysbModel,bound=True)
 
 
 bngl_model_filter = pysb.export.export(model_obs,'bngl')
-bngl_file_filter = open('cardiotox_bngl_model.bngl','w')
+bngl_file_filter = open('cardiotox_bngl_model_new.bngl','w')
 bngl_file_filter.write(bngl_model_filter+'\n')
 bngl_file_filter.close()
 model_actions = addSimParamters(method='ode',equil=True,equilSpecies=['SORAFENIB()'],viz=True)
-bngl_file_filter = open('cardiotox_bngl_model.bngl','a')
+bngl_file_filter = open('cardiotox_bngl_model_new.bngl','a')
 bngl_file_filter.write(model_actions)
 bngl_file_filter.close()
 

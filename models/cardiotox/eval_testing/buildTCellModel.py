@@ -13,21 +13,58 @@ from indra.assemblers import PysbAssembler
 import pysb
 
 
-#Build Prior
+##Build Prior
+#In [7]: receptor_dict['HLA-DMA']
+#Out[7]: ['CD3E']
+
+#In [8]: testStmts = ac.filter_gene_list(stmts,['phosphatidylinositol-3,4,5-triphosphate'],'one')
+
+#In [9]: testStmts
+#Out[9]: 
+#[Dephosphorylation(PTEN(), phosphatidylinositol-3,4,5-triphosphate(mods: (phosphorylation, False)), D, 3),
+# Dephosphorylation(PTEN(), phosphatidylinositol-3,4,5-triphosphate()),
+# Dephosphorylation(PTEN(), phosphatidylinositol-3,4,5-triphosphate(), D, 3)]
+
+#In [10]: testStmts[1].agent_list()[1]
+#Out[10]: phosphatidylinositol-3,4,5-triphosphate()
+
+#In [11]: testStmts[1].agent_list()[1].db_refs
+#Out[11]: {'TEXT': 'phosphatidylinositol-3,4,5-triphosphate'}
+
+#In [13]: testStmts[1].agent_list()[0].db_refs
+#Out[13]: {'HGNC': '9588', 'TEXT': 'PTEN', 'UP': 'P60484'}
 
 
-model_types = [Phosphorylation,Dephosphorylation,ActiveForm,IncreaseAmount,DecreaseAmount,Complex] #Gef,GtpActivation]#Check sos and raf stmts 
-drugTargets = ['PDGFRA']#,'KDR','FLT3']
-modifiedNodes = ['RPS6','PKM','HIF1A']# ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC']
-#modifiedNodes = ['PKM']# ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC']
-otherNodes =[]# ['MYC','JUN']#ligands = ['PDGFA','PDGF','VEGF','VEGFA','FLT3LG']
+#In [15]: testStmts2
+#Out[15]: 
+#[Dephosphorylation(PTEN(), phosphatidylinositol(), D, 3),
+# Dephosphorylation(PTEN(), phosphatidylinositol())]
+
+#In [16]: testStmts2 = ac.filter_gene_list(stmts,['Phosphatidylinositol'],'one')
+
+#In [17]: testStmts2
+#Out[17]: 
+#[Dephosphorylation(PTEN(muts: (G, 129, E)), Phosphatidylinositol()),
+# Dephosphorylation(PTEN(), Phosphatidylinositol())]
+
+#In [18]: testStmts2[1].agent_list()[1].db_refs
+#Out[18]: {'PUBCHEM': '53477912', 'TEXT': 'Phosphatidylinositol'}
+
+
+model_types = [Phosphorylation,Dephosphorylation,ActiveForm,IncreaseAmount,DecreaseAmount,Complex,Gef,GtpActivation]#Check sos and raf stmts 
+drugTargets = ['CD3D']
+modifiedNodes = ['AKT1']# 
+otherNodes = ['PDK1','PI3K','GRB2','BRAF','KRAS']#ligands = ['PDGFA','PDGF','VEGF','VEGFA','FLT3LG']
 model_genes = drugTargets + modifiedNodes + otherNodes
 
 
-reach_stmts = './indraReading/raw_stmts/reach_output.pkl'
-trips_stmts = './indraReading/raw_stmts/trips_output.pkl'
-prior_stmts = build_prior(model_genes,model_types,dbs=True,additional_stmts_files=[])
+reach_stmts = []
+trips_stmts = []
+prior_stmts = build_prior(model_genes,model_types,dbs=True,additional_stmts_files=None)
+ac.dump_statements(prior_stmts,'eval_raw_prior.pkl')
 
+
+prior_stmts = ac.load_statements('eval_raw_prior.pkl')
 #Prior reduction
 
 #Map to model_types
@@ -59,12 +96,12 @@ prior_model_stmts = ex.removeDimers(prior_model_stmts)
 
 
 #Add drug-target interactions 
-drugSentences = 'SORAFENIB dephosphorylates PDGFRA. SORAFENIB dephosphorylates KDR. SORAFENIB dephosphorylates FLT3'
+drugSentences = 'Vemurafenib dephosphorylates BRAF.'
 drug_stmts = buildDrugTargetStmts(drugSentences)
 prior_model_stmts = prior_stmts + drug_stmts
 
 #save prior model 
-ac.dump_statements(prior_model_stmts,'cardiotoxPrior.pkl')
+ac.dump_statements(prior_model_stmts,'evalPrior.pkl')
 
 
 
@@ -72,19 +109,15 @@ ac.dump_statements(prior_model_stmts,'cardiotoxPrior.pkl')
 
 #Expand model to match experimental observations
 
-prior_model_stmts = ac.load_statements('cardiotoxPrior.pkl')
-#otherNodes = ['MYC','JUN']#ligands = ['PDGFA','PDGF','VEGF','VEGFA','FLT3LG']
+prior_model_stmts = ac.load_statements('evalPrior.pkl')
 
-expSentences = 'SORAFENIB dephosphorylates RPS6. SORAFENIB phosphorylates PKM. SORAFENIB transcribes HIF1A.'
+expSentences ='VEMURAFENIB phosphorylates MAPK3. VEMURAFENIB dephosphorylates MAPK3.'
 exp_stmts = buildExperimentalStatements(expSentences)
 
 
-expObservations = {'RPS6':['phosphorylation',exp_stmts[0]],'PKM':['dephosphorylation',exp_stmts[1]],'HIF1A':['decreaseamount',exp_stmts[2]]}
-#expObservations = {'PKM':['phosphorylation',exp_stmts[1]]}
-#expObservations = {'PKM':['dephosphorylation',exp_stmts[1]]}
-drug = 'SORAFENIB'
-#drugTargets = ['FLT3','PDGFRA','KDR']
-drugTargets = ['PDGFRA']
+expObservations = {'MAPK3':['phosphorylation',exp_stmts[1]]}#'MAPK3':['dephosphorylation',exp_stmts[0]]}
+drug = 'VEMURAFENIB'
+drugTargets = ['BRAF']
 initialStmts = prior_model_stmts
 initialNodes = []
 for st in prior_model_stmts:
@@ -93,7 +126,7 @@ for st in prior_model_stmts:
             initialNodes.append(ag.name)
 
 
-modelStmts = expandModel(expObservations,drug,drugTargets,initialStmts,initialNodes,otherNodes)
+modelStmts = expandModel(expObservations,drug,drugTargets,initialStmts,initialNodes)
 
 
 ###########################################################################
