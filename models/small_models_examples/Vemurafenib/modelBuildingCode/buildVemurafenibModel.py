@@ -13,88 +13,137 @@ from indra.assemblers import PysbAssembler
 import pysb
 
 
-#Build Prior
+#Receptor Names = [ERBB2, ERBB3, ERBB4, EGFR, MET, AXL, Tyro3]
+
+#Changes in expression levels of receptors at DAY4 (fold change relative to untreated cells): 
+#ERBB2 - 3.5
+#ERBB3 - 1.5
+#ERBB4 - 3.5
+#EGFR - 0.4
+#MET - 0.3
+#AXL - 0.3
+#Tyro3 - 0.5
 
 
-model_types = [Phosphorylation,Dephosphorylation,ActiveForm,IncreaseAmount,DecreaseAmount,Complex] #Gef,GtpActivation]#Check sos and raf stmts 
-drugTargets = ['PDGFRA']#,'KDR','FLT3']
-modifiedNodes = ['RPS6','PKM','HIF1A']# ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC']
-#modifiedNodes = ['PKM']# ['JUN','STAT1','PKM','RPS6','AURKA','HIF1A','MYC']
-otherNodes =[]# ['MYC','JUN']#ligands = ['PDGFA','PDGF','VEGF','VEGFA','FLT3LG']
+#User Input
+drugTargets = ['BRAF']
+modifiedNodes = ['EGFR']
+otherNodes =['KRAS','MAP2K1']
 model_genes = drugTargets + modifiedNodes + otherNodes
 
-
-reach_stmts = './indraReading/raw_stmts/reach_output.pkl'
-trips_stmts = './indraReading/raw_stmts/trips_output.pkl'
-prior_stmts = build_prior(model_genes,model_types,dbs=True,additional_stmts_files=[])
-
-#Prior reduction
-
-#Map to model_types
-mods_to_keep = list(map(lambda obj: obj.__name__.lower(), model_types))
-
-stmts_to_remove = []
-for st in prior_stmts:
-    full_mods = list(map(lambda obj: obj.mods, st.agent_list())) #gives mods for a stmt, in list of lists. Actually need mod types. [(phosphorylation, Y, 589)]
-    flattened_mods = list(itertools.chain.from_iterable(full_mods))
-    #mod_types = list(map(lambda obj: obj.mod_type, mods) #mod types in lol 
-    mod_types = list(map(lambda obj: obj.mod_type, flattened_mods))
-    if any([el for el in mod_types if el not in mods_to_keep]):
-        stmts_to_remove.append(st)
-prior_model_stmts = [st for st in prior_stmts if st not in stmts_to_remove]
-
-
-stmts_to_remove = []
-for st in prior_model_stmts:
-    for ag in st.agent_list():
-        for mod in ag.mods:
-            if mod.mod_type not in mods_to_keep:
-                stmts_to_remove.append(st)
-
-prior_model_stmts = [st for st in prior_model_stmts if st not in stmts_to_remove]
-
-
-prior_model_stmts = ex.removeMutations(prior_model_stmts)
-prior_model_stmts = ex.removeDimers(prior_model_stmts)
-
-
 #Add drug-target interactions 
-drugSentences = 'SORAFENIB dephosphorylates PDGFRA. SORAFENIB dephosphorylates KDR. SORAFENIB dephosphorylates FLT3'
-drug_stmts = buildDrugTargetStmts(drugSentences)
-prior_model_stmts = prior_stmts + drug_stmts
+drug = 'VEMURAFENIB'
+#Inhibitor target = BRAFV600E mutant; does not inhibit formation and signaling through BRAF/CRAF dimers.
+drugSentences = 'VEMURAFENIB dephosphorylates BRAF V600E.' 
+expSentences = 'VEMURAFENIB degrades EGFR.'
+mutations = {'BRAF': [('Val', '600', 'Glu')]}
 
-#save prior model 
-ac.dump_statements(prior_model_stmts,'cardiotoxPrior.pkl')
 
 
+
+
+
+
+
+
+#Run 
+prior_model_stmts,expObservations = buildAndCleanPrior(modifiedNodes,model_genes,mutations,drug,drugSentences,expSentences)
+prior_model_stmts = ac.load_statements('modelPrior.pkl')
+expObservations = #Need to save this or separate it out
+
+
+modelStmts  = buildModel(prior_model_stmts,expObservations,drug,drugTargets,otherNodes)
+
+
+
+#def buildAndCleanPrior(drugTargets,modifiedNodes,model_genes,drug,drugSentences,expSentences):
+#def expandModel(prior_model_stmts,expObservations,drug,drugTargets,otherNodes):
+
+
+###############################################################
+#Build Prior 
+
+#expObservations = {}
+#for st in exp_stmts:
+#    if isinstance(st,Modification):
+#        expObservations[st.sub.name] = [st._get_mod_condition().mod_type,st] #works for mods 
+#    elif isinstance(st,RegulateAmount):
+#        expObservations[st.obj.name] = [type(st).__name__.lower(),st] #works for mods 
+##Build function for inverse of statements
+
+def buildAndCleanPrior(modifiedNodes,model_genes,mutations,drug,drugSentences,expSentences):
+
+    drug_stmts = buildDrugTargetStmts(drugSentences)
+    exp_stmts = buildExperimentalStatements(expSentences)
+
+    expObservations = {}
+    for st in exp_stmts:
+        if isinstance(st,Phosphorylation):
+            expObservations[st.sub.name] = ['dephosphorylation',st] #works for mods 
+        elif isinstance(st,Dephosphorylation):
+            expObservations[st.sub.name] = ['phosphorylation',st] #works for mods 
+        elif isinstance(st,IncreaseAmount):
+            expObservations[st.obj.name] = ['decreaseamount',st] #works for mods 
+        elif isinstance(st,DecreaseAmount):
+            expObservations[st.obj.name] = ['increaseamount',st] #works for mods 
+
+
+    #reach_stmts = './indraReading/raw_stmts/reach_output.pkl'
+    #trips_stmts = './indraReading/raw_stmts/trips_output.pkl'
+    #additional_stmts_files = [reach_stmts,trips_stmts]
+    model_types = [Phosphorylation,Dephosphorylation,ActiveForm,IncreaseAmount,DecreaseAmount,Complex] #Gef,GtpActivation]#Check sos and raf stmts 
+    prior_stmts = build_prior(model_genes,model_types,dbs=True,additional_stmts_files=[])
+
+    #Prior reduction
+
+    #Map to model_types
+    mods_to_keep = list(map(lambda obj: obj.__name__.lower(), model_types))
+    stmts_to_remove = []
+    for st in prior_stmts:
+        full_mods = list(map(lambda obj: obj.mods, st.agent_list())) #gives mods for a stmt, in list of lists. Actually need mod types. [(phosphorylation, Y, 589)]
+        flattened_mods = list(itertools.chain.from_iterable(full_mods))
+        #mod_types = list(map(lambda obj: obj.mod_type, mods) #mod types in lol 
+        mod_types = list(map(lambda obj: obj.mod_type, flattened_mods))
+        if any([el for el in mod_types if el not in mods_to_keep]):
+            stmts_to_remove.append(st)
+    prior_model_stmts = [st for st in prior_stmts if st not in stmts_to_remove]
+
+
+    stmts_to_remove = []
+    for st in prior_model_stmts:
+        for ag in st.agent_list():
+            for mod in ag.mods:
+                if mod.mod_type not in mods_to_keep:
+                    stmts_to_remove.append(st)
+
+    prior_model_stmts = [st for st in prior_model_stmts if st not in stmts_to_remove]
+
+
+#    prior_model_stmts = ex.removeMutations(prior_model_stmts)
+#    prior_model_stmts = ex.removeDimers(prior_model_stmts)
+    prior_model_stmts = prior_stmts + drug_stmts
+    prior_model_stmts = ac.filter_mutation_status(prior_model_stmts,mutations,deletions=[])
+
+    #save prior model 
+    ac.dump_statements(prior_model_stmts,'modelPrior.pkl')
+
+    return prior_model_stmts, expObservations
 
 ###########################################################################
 
 #Expand model to match experimental observations
-
-prior_model_stmts = ac.load_statements('cardiotoxPrior.pkl')
-#otherNodes = ['MYC','JUN']#ligands = ['PDGFA','PDGF','VEGF','VEGFA','FLT3LG']
-
-expSentences = 'SORAFENIB dephosphorylates RPS6. SORAFENIB phosphorylates PKM. SORAFENIB transcribes HIF1A.'
-exp_stmts = buildExperimentalStatements(expSentences)
-
-
-expObservations = {'RPS6':['phosphorylation',exp_stmts[0]],'PKM':['dephosphorylation',exp_stmts[1]],'HIF1A':['decreaseamount',exp_stmts[2]]}
-#expObservations = {'PKM':['phosphorylation',exp_stmts[1]]}
-#expObservations = {'PKM':['dephosphorylation',exp_stmts[1]]}
-drug = 'SORAFENIB'
-#drugTargets = ['FLT3','PDGFRA','KDR']
-drugTargets = ['PDGFRA']
-initialStmts = prior_model_stmts
-initialNodes = []
-for st in prior_model_stmts:
-    for ag in st.agent_list():
-        if ag.name not in initialNodes:
-            initialNodes.append(ag.name)
+def buildModel(prior_model_stmts,expObservations,drug,drugTargets,otherNodes):
+    #prior_model_stmts = ac.load_statements('modelPrior.pkl')
+    initialStmts = prior_model_stmts
+    initialNodes = []
+    for st in prior_model_stmts:
+        for ag in st.agent_list():
+            if ag.name not in initialNodes:
+                initialNodes.append(ag.name)
 
 
-modelStmts = expandModel(expObservations,drug,drugTargets,initialStmts,initialNodes,otherNodes)
-
+    modelStmts = expandModel(expObservations,drug,drugTargets,initialStmts,initialNodes,otherNodes)
+    return modelStmts
 
 ###########################################################################
 
@@ -112,7 +161,7 @@ bngl_model_filter = pysb.export.export(model_obs,'bngl')
 bngl_file_filter = open('cardiotox_bngl_model.bngl','w')
 bngl_file_filter.write(bngl_model_filter+'\n')
 bngl_file_filter.close()
-model_actions = addSimParamters(method='ode',equil=True,equilSpecies=['SORAFENIB()'],viz=True)
+model_actions = addSimParamters(method='ode',equil=True,equilSpecies=['%S()' % drug],viz=True)
 bngl_file_filter = open('cardiotox_bngl_model.bngl','a')
 bngl_file_filter.write(model_actions)
 bngl_file_filter.close()
