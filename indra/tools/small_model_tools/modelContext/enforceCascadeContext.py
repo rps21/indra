@@ -58,7 +58,7 @@ def findAllAgentNames(stmts):
 #    return lig_names, rec_names, lig_list, rec_list
 
 def find_rec_lig(stmts):
-    with open('/home/bobby/Dropbox/Sorger_Lab/indra/indra/tools/small_model_tools/modelContext/lig_rec_dict.pkl','rb') as f:
+    with open('/home/bobby/Dropbox/Sorger_Lab/indra/indra/tools/small_model_tools/modelContext/lig_rec_dict_tcr.pkl','rb') as f:
         receptor_dict = pickle.load(f)
     allRecNames = list(itertools.chain.from_iterable(list(receptor_dict.values())))
     allAgentNames = findAllAgentNames(stmts)
@@ -103,8 +103,6 @@ def find_rec_lig(stmts):
             ligRecPairAgents.append(ligRecPairAgent)
 
     ligRecPairNames = list(set(ligRecPairNames))
-    print(ligRecPairNames)
-    print(ligRecPairAgents)
     return ligRecPairNames, ligRecPairAgents, recInCorpus
 
 #Main idea here: typically, ligand binding is the active form for a receptor
@@ -292,6 +290,7 @@ def run_mechlinker_step_reduced(stmts):
 
     updated_stmts = ml.statements
     output_stmts = Preassembler.combine_duplicate_stmts(updated_stmts)   
+
     return output_stmts
 
 
@@ -308,6 +307,10 @@ def reduce_complex_activeforms(stmts):
     stmts_to_keep = ac.filter_by_type(stmts,ActiveForm,invert=True)
     af_agents = []
     for st in af_stmts:
+        if st.agent.mutations:
+#            print(st)
+            stmts_to_keep.append(st)
+#            break
         if not any(list(map(lambda obj: obj.matches(st.agent), af_agents))): 
             af_agents.append(st.agent)
     for ag in af_agents:
@@ -349,6 +352,8 @@ def combine_multiple_phos_activeforms(stmts):
         for st in ag_af_stmts:
             if st.agent.bound_conditions:
                 output_stmts.append(st)
+            elif st.agent.mutations:
+                output_stmts.append(st)
             elif st.is_active == False: #This should be split and handled identically but separtely from True
                 output_stmts.append(st)
             else:
@@ -357,11 +362,15 @@ def combine_multiple_phos_activeforms(stmts):
                     if not any(list(map(lambda obj: obj.matches(mod), all_mods))):
                         all_mods.append(deepcopy(mod))
         af_agent = deepcopy(ag)
-        af_mods = all_mods
-        af_agent.mods = af_mods
-        new_afstmt = ActiveForm(af_agent,activity='activity',is_active=True)
-        new_af_stmts.append(new_afstmt)
-        output_stmts = new_af_stmts + output_stmts
+        try:    
+            all_mods
+            af_mods = all_mods
+            af_agent.mods = af_mods
+            new_afstmt = ActiveForm(af_agent,activity='activity',is_active=True)
+            new_af_stmts.append(new_afstmt)
+            output_stmts = new_af_stmts + output_stmts
+        except UnboundLocalError:
+            output_stmts = output_stmts
     output_stmts = Preassembler.combine_duplicate_stmts(output_stmts)
     return output_stmts
 
