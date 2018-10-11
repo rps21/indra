@@ -13,13 +13,12 @@ from indra.tools.small_model_tools.modelContext import extraModelReductionTools 
 def buildSmallModel(stmts):
 
     finalStmts = cs.add_all_af(stmts)
-    finalStmts2 = ptm.coarse_grain_phos(finalStmts)
-    finalStmts3 = cs.combine_multiple_phos_activeforms(finalStmts2)
-    finalStmts4 = aim.addAll(finalStmts3)
-    finalStmts5 = ex.removeDimers(finalStmts4)
-    finalStmts6 = ex.removeMutations(finalStmts5)
+    finalStmts = ptm.coarse_grain_phos(finalStmts)
+    finalStmts = cs.combine_multiple_phos_activeforms(finalStmts)
+    finalStmts = aim.addAll(finalStmts)
+#    finalStmts5 = ex.removeDimers(finalStmts3)
 
-    return finalStmts6
+    return finalStmts
 
 #def writeBNGLFile(stmts):
 #    pa = PysbAssembler()
