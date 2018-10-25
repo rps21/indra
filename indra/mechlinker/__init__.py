@@ -196,6 +196,21 @@ class MechLinker(object):
                         new_stmt.uuid = str(uuid.uuid4())
                         af.apply_to(new_stmt.enz)
                         new_stmts.append(new_stmt)
+
+                #hanidle false AF Stmts 
+                #TODO: Handle mods and muts 
+                inactive_forms = deepcopy(enz_base.get_inactive_forms())
+                if inactive_forms:
+                    for iaf in inactive_forms :
+                        new_stmt = deepcopy(stmt)
+                        new_stmt.uuid = str(uuid.uuid4())
+
+                        if iaf.bound_conditions:
+                            for bc in iaf.bound_conditions:
+                                bc.is_bound=False
+                        iaf.apply_to(new_stmt.enz)
+                        new_stmts.append(new_stmt)
+
             elif isinstance(stmt, RegulateAmount) or \
                 isinstance(stmt, RegulateActivity):
                 if stmt.subj is None:
