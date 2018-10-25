@@ -6,10 +6,21 @@ from indra.statements import *
 
 
 def queryDB(gene,mod):
-    resp = requests.get('https://lsm6zea7gg.execute-api.us-east-1.amazonaws.com/production/statements/',
-                        headers={'x-api-key': 'XH36SVAGBN9L3SA8XNuHu5hvJ9v3j9mq8PTkPYjG'},
-                        params={'object': gene,
-                                'type': mod})
+    timeout = 1
+    timeout_counter = 0
+    while timeout == 1:
+
+        resp = requests.get('https://lsm6zea7gg.execute-api.us-east-1.amazonaws.com/production/statements/',
+                            headers={'x-api-key': 'XH36SVAGBN9L3SA8XNuHu5hvJ9v3j9mq8PTkPYjG'},
+                            params={'object': gene,
+                                    'type': mod})
+        if 'message' in resp.json():
+            print(resp.json().get('message'))
+            timeout_counter = timeout_counter + 1
+            print('Number of timeouts: %s' % timeout_counter)
+        else:
+            timeout=0
+
     stmts_json = resp.json()
     stmts = stmts_from_json(stmts_json['statements'])
     stmts = cleanStatements(stmts)
