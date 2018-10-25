@@ -30,13 +30,11 @@ logging.getLogger("pysb_assembler").setLevel(logging.WARNING)
 #Build sif file
 def buildDirectedSif(stmts,drugStmts):
 
-    #TESTING
-#    ac.dump_statements(stmts,'testingContext.pkl')
-
     #Apply small model simplification to list of statements 
     modelStmts = bsm.buildSmallModel(stmts)
     modelStmts = modelStmts + drugStmts
     modelStmts = cs.run_mechlinker_step(modelStmts)
+
     #build sif graph 
     sa = SifAssembler(modelStmts)
     sifModel = sa.make_model(use_name_as_key=True, include_mods=True,include_complexes=True)
@@ -88,8 +86,6 @@ def buildModel(paths,stmts,drug,nodes=[]):
     for path in paths:
         uniqueNodes = uniqueNodes + [el for el in list(path) if el not in uniqueNodes]
     
-
-
     necessaryNodes = ['GenericAgent'] + nodes  #Allow for specification of nodes that must be in a model, even if they aren't found on a path. ir
     uniqueNodes = uniqueNodes + necessaryNodes
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
@@ -100,7 +96,6 @@ def buildModel(paths,stmts,drug,nodes=[]):
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
 
     modelStmts = Preassembler.combine_duplicate_stmts(modelStmts)  
-#    ac.dump_statements(modelStmts,'cardiotox_mapk_testing.pkl')
     pa = PysbAssembler()
     pa.add_statements(modelStmts)
     PySB_Model = pa.make_model()
@@ -112,7 +107,6 @@ def buildModel(paths,stmts,drug,nodes=[]):
 def testExpStmt(model,expStmt): #take in statements? Sentences?
 
     testStmts = [expStmt]
-    print('HERE %s' % testStmts)
     mc = model_checker.ModelChecker(model=model,statements=testStmts)
     results = mc.check_model(max_path_length=15)
 
@@ -208,6 +202,12 @@ def expandModel(expObservations,drug,drugTargets,drugStmts,initialStmts=None,ini
         currentNodes = []
 
     for key in expObservations:
+        #Find better way to track stmts 
+        try:
+            currentStmts = finalStmts
+        except NameError:
+            finalStmts = [] 
+
         finalNode = key
         nodeToExplain = key
         modToExplain = expObservations[key][0]
@@ -216,10 +216,17 @@ def expandModel(expObservations,drug,drugTargets,drugStmts,initialStmts=None,ini
 
         #Model doesn't satisfy condition, go searching for statements to add to model 
         if passResult:
-            finalStmts = modelStmts
+            finalStmts = modelStmts + finalStmts
         else:
             found = 0
             while found == 0:
+
+                try:
+                    print(finalStmts)
+                except NameError:
+                    pass 
+
+
                 #search for potential nodes and stmts to add to the model 
                 stmtsDB = idb.queryDB(nodeToExplain,modToExplain)
                 stmtsDB = idb.cleanStatements(stmtsDB)
@@ -239,7 +246,8 @@ def expandModel(expObservations,drug,drugTargets,drugStmts,initialStmts=None,ini
                         passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,drugStmts,finalNode,expStmt,extraNodes)      
                         if passResult:
                             found = 1
-                            finalStmts = aim.addAll(modelStmts)
+                            finalStmts = aim.addAll(modelStmts) + finalStmts
+                            finalStmts = Preassembler.combine_duplicate_stmts(finalStmts)
                             print('Worked!')
                             break
                         else:
