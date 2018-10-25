@@ -14,7 +14,7 @@ def buildSmallModel(stmts):
 
     finalStmts = cs.add_all_af(stmts)
     finalStmts = ptm.coarse_grain_phos(finalStmts)
-    finalStmts = cs.combine_multiple_phos_activeforms(finalStmts)
+    finalStmts = cs.combine_multiple_activeforms(finalStmts)
     finalStmts = aim.addAll(finalStmts)
 #    finalStmts5 = ex.removeDimers(finalStmts3)
 
