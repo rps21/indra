@@ -337,9 +337,14 @@ def reduce_complex_activeforms(stmts):
 ##Making multiple phos af's 'and' gated
 ##Can loop through all proteins (going to be very slow) and pull out all af statements for a given protein
 
-def combine_multiple_phos_activeforms(stmts):
+def combine_multiple_activeforms(stmts):
     new_af_stmts = []
-    af_stmts = ac.filter_by_type(stmts,ActiveForm)
+    af_stmts = deepcopy(ac.filter_by_type(stmts,ActiveForm))
+
+    #Generalize activity type to reduce redundant AF stmts 
+    for st in af_stmts:
+        st.activity='activity'
+
     output_stmts = ac.filter_by_type(stmts,ActiveForm,invert=True)
     af_agents = []
     for st in af_stmts:
@@ -372,6 +377,7 @@ def combine_multiple_phos_activeforms(stmts):
             output_stmts = new_af_stmts + output_stmts
         except UnboundLocalError:
             output_stmts = output_stmts
+
     output_stmts = Preassembler.combine_duplicate_stmts(output_stmts)
     return output_stmts
 
