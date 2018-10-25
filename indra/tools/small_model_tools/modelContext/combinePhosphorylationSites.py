@@ -73,12 +73,6 @@ def build_ptm_dict_genericres(stmts,name):
         inhibModsDict[str(mod)] = 'phos_inhib'
     for mod in neutralMods:
         neutralModsDict[str(mod)] = 'phos_act'
-    print('Activating')
-#    print(actMods)
-    print(actModsDict)
-    print('Inhib')
-#    print(inhibMods)
-    print(inhibModsDict)
     return [actModsDict, inhibModsDict, neutralModsDict]
 
 def build_ptm_dict_keepres(stmts,name):
