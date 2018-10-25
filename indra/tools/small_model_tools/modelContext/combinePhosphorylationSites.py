@@ -101,6 +101,7 @@ def build_ptm_dict_keepres(stmts,name):
 def replace_ptms(stmts,name,dictionary):
     relevantStatements = ac.filter_gene_list(stmts,[name],'one',remove_bound=True)
     otherStatements = [st for st in stmts if st not in relevantStatements] 
+
     for st in relevantStatements:
         for ag in st.agent_list():
             #change context on any agents 
@@ -138,6 +139,7 @@ def replace_ptms(stmts,name,dictionary):
                 if st.sub.name == name and st.residue == res and st.position == pos:   
                     st.residue = dictionary[str(entry)]
                     st.position = None
+
     outputStmts = relevantStatements + otherStatements
     return outputStmts 
 
@@ -163,6 +165,7 @@ def coarse_grain_phos(stmts,generic=True):
             dictList = build_ptm_dict_keepres(stmts,name)
         for dictionary in dictList:
             outputStmts = replace_ptms(stmts,name,dictionary)
+    
     outputStmts = Preassembler.combine_duplicate_stmts(outputStmts)
     return outputStmts
 

@@ -272,8 +272,9 @@ def add_all_af(stmts):
 
     recLigStmts = reduce_complex_activeforms(recLigStmts)
     tmpStmts = reduce_complex_activeforms(tmpStmts)
+
     stmts1 = recLigStmts
-    stmts2 = run_mechlinker_step_reduced(tmpStmts)
+    stmts2 = run_mechlinker_step(tmpStmts)
 
     outputStmts = stmts1 + stmts2
     outputStmts = Preassembler.combine_duplicate_stmts(outputStmts)
@@ -281,7 +282,7 @@ def add_all_af(stmts):
 
 
 
-def run_mechlinker_step_reduced(stmts):
+def run_mechlinker_step(stmts):
     ml = MechLinker(stmts)
     ml.gather_explicit_activities() 
     ml.gather_modifications()
