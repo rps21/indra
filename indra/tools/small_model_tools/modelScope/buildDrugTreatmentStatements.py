@@ -28,7 +28,13 @@
 
 #Try to reformulate these in a way to not rely on trips and take in lists of genes instead of nl sentences 
 
+
+import pickle
 from indra.sources import trips
+from indra.tools.small_model_tools.modelContext import enforceCascadeContext as cs
+from indra.tools.small_model_tools.modelContext import combinePhosphorylationSites as ptm
+from indra.tools.small_model_tools.modelContext import addImplicitMechs as aim
+
 def buildExperimentalStatements(sentences):
     tp = trips.process_text(sentences)
     expStmts = tp.statements
@@ -37,7 +43,12 @@ def buildExperimentalStatements(sentences):
 def buildDrugTargetStmts(sentences):
     tp = trips.process_text(sentences)
     drugStmts = tp.statements
+    drugStmts = cs.add_all_af(drugStmts)
+    drugStmts = ptm.coarse_grain_phos(drugStmts)
+    drugStmts = cs.combine_multiple_phos_activeforms(drugStmts)
     return drugStmts
+
+
 
 
 
