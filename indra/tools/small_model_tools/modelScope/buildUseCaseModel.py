@@ -28,14 +28,15 @@ logging.getLogger("pysb_assembler").setLevel(logging.WARNING)
 #TODO:
 
 #Build sif file
-def buildDirectedSif(stmts):
+def buildDirectedSif(stmts,drugStmts):
 
     #TESTING
 #    ac.dump_statements(stmts,'testingContext.pkl')
 
     #Apply small model simplification to list of statements 
     modelStmts = bsm.buildSmallModel(stmts)
-
+    modelStmts = modelStmts + drugStmts
+    modelStmts = cs.run_mechlinker_step(modelStmts)
     #build sif graph 
     sa = SifAssembler(modelStmts)
     sifModel = sa.make_model(use_name_as_key=True, include_mods=True,include_complexes=True)
@@ -91,17 +92,15 @@ def buildModel(paths,stmts,drug,nodes=[]):
 
     necessaryNodes = ['GenericAgent'] + nodes  #Allow for specification of nodes that must be in a model, even if they aren't found on a path. ir
     uniqueNodes = uniqueNodes + necessaryNodes
-    print('UNIQUE NODES ARE %s' % uniqueNodes)
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
 
     recLigNamePairs = cs.find_rec_lig(modelStmts)[0]
     recLigNames = list(itertools.chain.from_iterable(recLigNamePairs))
     uniqueNodes = uniqueNodes + recLigNames    #Additionally add back any missing ligands, so a receptor always has a pa
     modelStmts = ac.filter_gene_list(stmts,uniqueNodes,'all')
-    print('UNIQUE NODES PT 2 ARE %s' % uniqueNodes)
 
     modelStmts = Preassembler.combine_duplicate_stmts(modelStmts)  
-    ac.dump_statements(modelStmts,'cardiotox_mapk_testing.pkl')
+#    ac.dump_statements(modelStmts,'cardiotox_mapk_testing.pkl')
     pa = PysbAssembler()
     pa.add_statements(modelStmts)
     PySB_Model = pa.make_model()
@@ -120,11 +119,9 @@ def testExpStmt(model,expStmt): #take in statements? Sentences?
     return results, mc
 
 
-def runModelCheckingRoutine(stmts,drug,nodeToExplain,expStmts,extraNodes):
-    fn, contextStmts = buildDirectedSif(stmts)
+def runModelCheckingRoutine(stmts,drug,drugStmts,nodeToExplain,expStmts,extraNodes):
+    fn, contextStmts = buildDirectedSif(stmts,drugStmts)
     paths = findPaths(fn,drug,nodeToExplain,15)
-    print(expStmts)
-    print(paths)
 
     if paths:
         extraNodes.append(drug)
@@ -202,7 +199,7 @@ def findActiveForm(node,currentNodes):
 
 ##############################################
 
-def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=None,extraNodes=[]):
+def expandModel(expObservations,drug,drugTargets,drugStmts,initialStmts=None,initialNodes=None,extraNodes=[]):
     if initialStmts:
         currentStmts = initialStmts
         currentNodes = initialNodes
@@ -215,7 +212,7 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
         nodeToExplain = key
         modToExplain = expObservations[key][0]
         expStmt = expObservations[key][1]
-        passResult, modelStmts = runModelCheckingRoutine(currentStmts,drug,nodeToExplain,expStmt,extraNodes)
+        passResult, modelStmts = runModelCheckingRoutine(currentStmts,drug,drugStmts,nodeToExplain,expStmt,extraNodes)
 
         #Model doesn't satisfy condition, go searching for statements to add to model 
         if passResult:
@@ -239,7 +236,7 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
                         print(currentNodes)
                         testStmts = currentStmts + ac.filter_gene_list(stmtsDB,node,'one')  #+ prior filtered by new node?
 
-                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,expStmt,extraNodes)      
+                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,drugStmts,finalNode,expStmt,extraNodes)      
                         if passResult:
                             found = 1
                             finalStmts = aim.addAll(modelStmts)
@@ -267,7 +264,7 @@ def expandModel(expObservations,drug,drugTargets,initialStmts=None,initialNodes=
                         currentNodes.append(option)
                         print('Testing new node %s' % option)
                         testStmts = currentStmts + ac.filter_gene_list(stmtsDB,node,'one')  
-                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,finalNode,expStmt,extraNodes)      
+                        passResult, modelStmts = runModelCheckingRoutine(testStmts,drug,drugStmts,finalNode,expStmt,extraNodes)      
                         if passResult:
                             found = 1
                             finalStmts = modelStmts
