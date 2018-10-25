@@ -52,6 +52,11 @@ def find_act_inhib_sites(stmts,name):
                         if not any([mod.matches(umod) for umod in inhibMods]):
                             inhibMods.append(mod)
     allMods = find_all_ptm_sites(stmts, name)
+    #Remove inhibitory mods that also appear as activating 
+    for mod in inhibMods:
+        if any([mod.matches(umod) for umod in actMods]):
+            inhibMods.remove(mod)
+
     neutralMods = [mod for mod in allMods if mod not in actMods and mod not in inhibMods]
     return actMods,inhibMods,neutralMods
 
@@ -68,6 +73,12 @@ def build_ptm_dict_genericres(stmts,name):
         inhibModsDict[str(mod)] = 'phos_inhib'
     for mod in neutralMods:
         neutralModsDict[str(mod)] = 'phos_act'
+    print('Activating')
+#    print(actMods)
+    print(actModsDict)
+    print('Inhib')
+#    print(inhibMods)
+    print(inhibModsDict)
     return [actModsDict, inhibModsDict, neutralModsDict]
 
 def build_ptm_dict_keepres(stmts,name):
@@ -154,6 +165,21 @@ def remove_dup_phos(stmts):
             ag.mods = new_mod_list
     return outputStmts
 
+def cleanup_inhib(stmts):
+    afStmts = deepcopy(ac.filter_by_type(stmts,ActiveForm))
+    otherStmts = ac.filter_by_type(stmts,ActiveForm,invert=True)
+    
+    for st in afStmts:
+        try:
+            if st.agent.mods[0].residue == 'phos_act':
+                st.is_active = True
+        except IndexError:
+            pass #Not relevant
+
+    outputStmts = otherStmts + afStmts
+    outputStmts = Preassembler.combine_duplicate_stmts(outputStmts)           
+    return outputStmts
+
 
 def coarse_grain_phos(stmts,generic=True):
     stmts = remove_dup_phos(stmts)
@@ -166,6 +192,7 @@ def coarse_grain_phos(stmts,generic=True):
         for dictionary in dictList:
             outputStmts = replace_ptms(stmts,name,dictionary)
     
+    outputStmts = cleanup_inhib(outputStmts)
     outputStmts = Preassembler.combine_duplicate_stmts(outputStmts)
     return outputStmts
 
