@@ -45,7 +45,7 @@ def buildDrugTargetStmts(sentences):
     drugStmts = tp.statements
     drugStmts = cs.add_all_af(drugStmts)
     drugStmts = ptm.coarse_grain_phos(drugStmts)
-    drugStmts = cs.combine_multiple_phos_activeforms(drugStmts)
+    drugStmts = cs.combine_multiple_activeforms(drugStmts)
     return drugStmts
 
 

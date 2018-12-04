@@ -93,7 +93,7 @@ for st in prior_model_stmts:
             initialNodes.append(ag.name)
 
 
-modelStmts = expandModel(expObservations,drug,drugTargets,initialStmts,initialNodes,otherNodes)
+modelStmts = expandModel(expObservations,drug,drugTargets,drug_stmts,initialStmts,initialNodes,otherNodes)
 
 
 ###########################################################################

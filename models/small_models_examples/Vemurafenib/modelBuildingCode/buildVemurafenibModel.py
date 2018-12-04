@@ -23,37 +23,113 @@ import pysb
 #MET - 0.3
 #AXL - 0.3
 #Tyro3 - 0.5
+#I only know that inhibiting EGFR, ERBB2, ERBB3, and ERBB4 is important for the survival of these cells. 
+#My hypothesis is that there is signaling through the ERBB2/3 dimer or ERBB3/4 dimer, but it could of course be wrong. 
+
+
 
 
 #User Input
 drugTargets = ['BRAF']
-modifiedNodes = ['EGFR']
-otherNodes =['KRAS','MAP2K1']
+modifiedNodes = ['ERBB2','EGFR','ERBB3','MET']
+#ERBB4 failed. 
+otherNodes =['KRAS','MAP2K1','SOS1','GRB2']
 model_genes = drugTargets + modifiedNodes + otherNodes
 
 #Add drug-target interactions 
 drug = 'VEMURAFENIB'
 #Inhibitor target = BRAFV600E mutant; does not inhibit formation and signaling through BRAF/CRAF dimers.
-drugSentences = 'VEMURAFENIB dephosphorylates BRAF V600E.' 
-expSentences = 'VEMURAFENIB degrades EGFR.'
-mutations = {'BRAF': [('Val', '600', 'Glu')]}
+#drugSentences = 'VEMURAFENIB dephosphorylates BRAF V600E.' 
+expSentences = 'VEMURAFENIB degrades EGFR. VEMURAFENIB degrades MET. VEMURAFENIB transcribes ERBB2. VEMURAFENIB transcribes ERBB3.'# VEMURAFENIB transcribes ERBB4.'
+
+mutations = {'BRAF': [('Val', '600', 'Glu'),('V', '600', 'E')]}
+#drugSentences = 'VEMURAFENIB dephosphorylates BRAF V600E.' 
+
+drugSentences = 'BRAF V600E bound to VEMURAFENIB is inactive. VEMURAFENIB BINDS BRAF V600E' 
+drug_stmts = buildDrugTargetStmts(drugSentences)
 
 
 
 
+def unify_mutations(stmts):
+    mutation_stmts = []
+    output_stmts = []
+    for st in stmts:
+        if any(list(map(lambda obj: obj.mutations, st.agent_list()))): 
+            mutation_stmts.append(st)
+        else:
+            output_stmts.append(st)
+
+    for st in mutation_stmts:
+        for ag in st.agent_list():
+            for mut in ag.mutations:
+                if mut.residue_from.lower() in amino_acids_reverse:
+                    mut.residue_from = amino_acids_reverse.get(mut.residue_from.lower())
+                    mut.residue_to = amino_acids_reverse.get(mut.residue_to.lower())
+
+    output_stmts = output_stmts + mutation_stmts
+    return output_stmts
+
+
+
+
+
+
+def buildExpObs(expSentences):
+    exp_stmts = buildExperimentalStatements(expSentences)
+    expObservations = {}
+    for st in exp_stmts:
+        if isinstance(st,Phosphorylation):
+            expObservations[st.sub.name] = ['dephosphorylation',st] #works for mods 
+        elif isinstance(st,Dephosphorylation):
+            expObservations[st.sub.name] = ['phosphorylation',st] #works for mods 
+        elif isinstance(st,IncreaseAmount):
+            expObservations[st.obj.name] = ['decreaseamount',st] #works for mods 
+        elif isinstance(st,DecreaseAmount):
+            expObservations[st.obj.name] = ['increaseamount',st] #works for mods 
+    return expObservations
+
+
+expObservations = buildExpObs(expSentences)     #Need to save this or separate it out
+
+#Expand model to match experimental observations
+def buildModel(prior_model_stmts,expObservations,drug,drugTargets,drug_stmts,otherNodes):
+    #prior_model_stmts = ac.load_statements('modelPrior.pkl')
+    initialStmts = prior_model_stmts
+    initialNodes = []
+    for st in prior_model_stmts:
+        for ag in st.agent_list():
+            if ag.name not in initialNodes:
+                initialNodes.append(ag.name)
+
+
+    modelStmts = expandModel(expObservations,drug,drugTargets,drug_stmts,initialStmts,initialNodes,otherNodes)
+    return modelStmts
+
+
+
+
+###############################################################
 
 
 
 
 
 #Run 
-prior_model_stmts,expObservations = buildAndCleanPrior(modifiedNodes,model_genes,mutations,drug,drugSentences,expSentences)
-prior_model_stmts = ac.load_statements('modelPrior.pkl')
-expObservations = #Need to save this or separate it out
+prior_model_stmts = ac.load_statements('modelPrior_large.pkl')
+#prior_model_stmts,expObservations = buildAndCleanPrior(modifiedNodes,model_genes,mutations,expSentences)
+prior_model_stmts = unify_mutations(prior_model_stmts)
+modelStmts  = buildModel(prior_model_stmts,expObservations,drug,drugTargets,drug_stmts,otherNodes)
 
 
-modelStmts  = buildModel(prior_model_stmts,expObservations,drug,drugTargets,otherNodes)
+#Temp inhibitory hack
+finalModelStmts = []
+for st in modelStmts:
+    if 'phos_inhib' not in str(st):
+        finalModelStmts.append(st)
 
+
+ac.dump_statements(fname='vem_model_stmts.pkl',stmts=finalModelStmts)
 
 
 #def buildAndCleanPrior(drugTargets,modifiedNodes,model_genes,drug,drugSentences,expSentences):
@@ -71,9 +147,8 @@ modelStmts  = buildModel(prior_model_stmts,expObservations,drug,drugTargets,othe
 #        expObservations[st.obj.name] = [type(st).__name__.lower(),st] #works for mods 
 ##Build function for inverse of statements
 
-def buildAndCleanPrior(modifiedNodes,model_genes,mutations,drug,drugSentences,expSentences):
+def buildAndCleanPrior(modifiedNodes,model_genes,mutations,expSentences):
 
-    drug_stmts = buildDrugTargetStmts(drugSentences)
     exp_stmts = buildExperimentalStatements(expSentences)
 
     expObservations = {}
@@ -121,36 +196,28 @@ def buildAndCleanPrior(modifiedNodes,model_genes,mutations,drug,drugSentences,ex
 
 #    prior_model_stmts = ex.removeMutations(prior_model_stmts)
 #    prior_model_stmts = ex.removeDimers(prior_model_stmts)
-    prior_model_stmts = prior_stmts + drug_stmts
+#    prior_model_stmts = prior_stmts + drug_stmts
     prior_model_stmts = ac.filter_mutation_status(prior_model_stmts,mutations,deletions=[])
+    prior_model_stmts = unify_mutations(prior_model_stmts)
+
 
     #save prior model 
-    ac.dump_statements(prior_model_stmts,'modelPrior.pkl')
+    ac.dump_statements(prior_model_stmts,'modelPrior_large.pkl')
+
 
     return prior_model_stmts, expObservations
 
 ###########################################################################
 
-#Expand model to match experimental observations
-def buildModel(prior_model_stmts,expObservations,drug,drugTargets,otherNodes):
-    #prior_model_stmts = ac.load_statements('modelPrior.pkl')
-    initialStmts = prior_model_stmts
-    initialNodes = []
-    for st in prior_model_stmts:
-        for ag in st.agent_list():
-            if ag.name not in initialNodes:
-                initialNodes.append(ag.name)
 
 
-    modelStmts = expandModel(expObservations,drug,drugTargets,initialStmts,initialNodes,otherNodes)
-    return modelStmts
 
 ###########################################################################
 
 #Build and write bngl model 
 
 pa = PysbAssembler()
-pa.add_statements(modelStmts)
+pa.add_statements(finalModelStmts)
 pysbModel = pa.make_model()
 #WARNING: [2018-08-29 16:12:59] indra/pysb_assembler - HIF1A transcribes itself, skipping???
 
@@ -158,50 +225,13 @@ model_obs = addObservables(pysbModel,bound=True)
 
 
 bngl_model_filter = pysb.export.export(model_obs,'bngl')
-bngl_file_filter = open('cardiotox_bngl_model.bngl','w')
+bngl_file_filter = open('vemurafenib_bngl_model.bngl','w')
 bngl_file_filter.write(bngl_model_filter+'\n')
 bngl_file_filter.close()
-model_actions = addSimParamters(method='ode',equil=True,equilSpecies=['%S()' % drug],viz=True)
-bngl_file_filter = open('cardiotox_bngl_model.bngl','a')
+model_actions = addSimParamters(method='ode',equil=True,equilSpecies=['%s()' % drug],viz=True)
+bngl_file_filter = open('vemurafenib_bngl_model.bngl','a')
 bngl_file_filter.write(model_actions)
 bngl_file_filter.close()
-
-
-
-#from indra.util import _require_python3
-#import os
-#import json
-#import time
-#import pickle
-
-## CREATE A JSON FILE WITH THIS INFORMATION, E.G., a file consisting of:
-## {"basename": "fallahi_eval", "basedir": "output"}
-#with open('config.json', 'rt') as f:
-#    config = json.load(f)
-## This is the base name used for all files created/saved
-#basen = config['basename']
-## This is the base folder to read/write (potentially large) files from/to
-## MODIFY ACCORDING TO YOUR OWN SETUP
-#based = config['basedir']
-
-## This makes it easier to make standardized pickle file paths
-#prefixed_pkl = lambda suffix: os.path.join(based, basen + '_' + suffix + '.pkl')
-
-#def pkldump(suffix, content):
-#    fname = prefixed_pkl(suffix)
-#    with open(fname, 'wb') as fh:
-#        pickle.dump(content, fh)
-
-#def pklload(suffix):
-#    fname = prefixed_pkl(suffix)
-#    print('Loading %s' % fname)
-#    ts = time.time()
-#    with open(fname, 'rb') as fh:
-#        content = pickle.load(fh)
-#    te = time.time()
-#    print('Loaded %s in %.1f seconds' % (fname, te-ts))
-#    return content
-
 
 
 
