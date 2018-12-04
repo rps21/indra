@@ -1,0 +1,76 @@
+n [2]: drug_stmts
+Out[2]: 
+[Complex(VEMURAFENIB(), BRAF(muts: (V, 600, E))),
+ ActiveForm(BRAF(muts: (V, 600, E), bound: [VEMURAFENIB, True]), activity, False)]
+
+
+In [6]: contextStmts = cs.add_all_af(testingStmts)
+   ...: ptmStmts = ptm.coarse_grain_phos(contextStmts)
+   ...: context2 = cs.combine_multiple_phos_activeforms(ptmStmts)
+   ...: 
+
+In [7]: ptmStmts
+Out[7]: 
+[ActiveForm(BRAF(muts: (V, 600, E), bound: [VEMURAFENIB, True]), activity, False),
+ Complex(VEMURAFENIB(), BRAF(muts: (V, 600, E)))]
+
+
+
+In [3]: expSentences = 'SORAFENIB dephosphorylates RPS6. SORAFENIB phosphorylates PKM. SORAFENIB transcribes HIF1A.'
+   ...: exp_stmts = buildExperimentalStatements(expSentences)
+   ...: 
+
+In [4]: import pickle
+   ...: import tempfile
+   ...: from indra.tools.small_model_tools.modelScope.buildPriorModel import build_prior
+   ...: from indra.statements import *
+   ...: from indra.tools import assemble_corpus as ac
+   ...: from indra.tools.small_model_tools.modelScope.buildDrugTreatmentStatements import buildExperimentalStatements
+   ...: from indra.tools.small_model_tools.modelScope.buildDrugTreatmentStatements import buildDrugTargetStmts
+   ...: from indra.tools.small_model_tools.modelScope.buildUseCaseModel import expandModel
+   ...: from indra.tools.small_model_tools.modelScope.addBNGLParameters import addObservables
+   ...: from indra.tools.small_model_tools.modelScope.addBNGLParameters import addSimParamters
+   ...: from indra.tools.small_model_tools.modelContext import extraModelReductionTools as ex
+   ...: from indra.assemblers import PysbAssembler
+   ...: import pysb
+   ...: from indra.sources import trips
+   ...: from indra.tools.small_model_tools.modelContext import enforceCascadeContext as cs
+   ...: from indra.tools.small_model_tools.modelContext import combinePhosphorylationSites as ptm
+   ...: from indra.tools.small_model_tools.modelContext import addImplicitMechs as aim
+   ...: 
+   ...: 
+   ...: 
+
+In [5]: 
+
+In [5]: drugSentences = 'SORAFENIB dephosphorylates PDGFRA. SORAFENIB dephosphorylates KDR. SORAFENIB dephosphorylates FLT3'
+   ...: drug_stmts = buildDrugTargetStmts(drugSentences)
+   ...: 
+testingS  	
+In [6]: testingStmts=drug_stmts
+
+In [7]: testingStmts
+Out[7]: 
+[Dephosphorylation(SORAFENIB(), PDGFRA()),
+ Dephosphorylation(SORAFENIB(), KDR()),
+ Dephosphorylation(SORAFENIB(), FLT3())]
+
+In [8]: contextStmts = cs.add_all_af(testingStmts)
+   ...: ptmStmts = ptm.coarse_grain_phos(contextStmts)
+   ...: 
+
+In [9]: ptmStmts
+Out[9]: 
+[ActiveForm(FLT3(mods: (phosphorylation, phos_act)), activity, True),
+ ActiveForm(KDR(mods: (phosphorylation, phos_act)), activity, True),
+ ActiveForm(PDGFRA(mods: (phosphorylation, phos_act)), activity, True),
+ Complex(FLT3LG(), FLT3()),
+ Complex(VEGF(), KDR()),
+ Complex(PDGFA(), PDGFRA()),
+ Dephosphorylation(SORAFENIB(), FLT3(), phos_act),
+ Dephosphorylation(SORAFENIB(), KDR(), phos_act),
+ Dephosphorylation(SORAFENIB(), PDGFRA(), phos_act),
+ Phosphorylation(FLT3(bound: [FLT3LG, True]), FLT3(), phos_act),
+ Phosphorylation(KDR(bound: [VEGF, True]), KDR(), phos_act),
+ Phosphorylation(PDGFRA(bound: [PDGFA, True]), PDGFRA(), phos_act)]
+
