@@ -188,28 +188,30 @@ class MechLinker(object):
                     continue
                 enz_base = self._get_base(stmt.enz)
                 active_forms = enz_base.get_active_forms()
-                if not active_forms:
+                inactive_forms = deepcopy(enz_base.get_inactive_forms())
+
+                if not active_forms and not inactive_forms:
                     new_stmts.append(stmt)
                 else:
-                    for af in active_forms:
-                        new_stmt = deepcopy(stmt)
-                        new_stmt.uuid = str(uuid.uuid4())
-                        af.apply_to(new_stmt.enz)
-                        new_stmts.append(new_stmt)
+                    if active_forms:
+                        for af in active_forms:
+                            new_stmt = deepcopy(stmt)
+                            new_stmt.uuid = str(uuid.uuid4())
+                            af.apply_to(new_stmt.enz)
+                            #new_stmts.append(new_stmt)
 
-                #hanidle false AF Stmts 
-                #TODO: Handle mods and muts 
-                inactive_forms = deepcopy(enz_base.get_inactive_forms())
-                if inactive_forms:
-                    for iaf in inactive_forms :
-                        new_stmt = deepcopy(stmt)
-                        new_stmt.uuid = str(uuid.uuid4())
+                    #hanidle false AF Stmts 
+                    #TODO: Handle mods and muts 
+                    if inactive_forms:
+                        for iaf in inactive_forms :
+                            new_stmt = deepcopy(stmt)
+                            new_stmt.uuid = str(uuid.uuid4())
 
-                        if iaf.bound_conditions:
-                            for bc in iaf.bound_conditions:
-                                bc.is_bound=False
-                        iaf.apply_to(new_stmt.enz)
-                        new_stmts.append(new_stmt)
+                            if iaf.bound_conditions:
+                                for bc in iaf.bound_conditions:
+                                    bc.is_bound=False
+                            iaf.apply_to(new_stmt.enz)
+                    new_stmts.append(new_stmt)
 
             elif isinstance(stmt, RegulateAmount) or \
                 isinstance(stmt, RegulateActivity):
